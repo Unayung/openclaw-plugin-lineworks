@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-plugin-lineworks",
+  "name": "@openclaw-plugins/lineworks",
   "version": "0.1.0-poc.0",
   "description": "OpenClaw LINE WORKS channel plugin (PoC)",
   "type": "module",
@@ -62,7 +62,7 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "openclaw-plugin-lineworks",
+      "npmSpec": "@openclaw-plugins/lineworks",
       "defaultChoice": "npm",
       "minHostVersion": ">=2026.4.10"
     }
