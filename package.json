@@ -1,0 +1,46 @@
+{
+  "name": "openclaw-plugin-lineworks",
+  "version": "0.1.0-poc.0",
+  "description": "OpenClaw LINE WORKS channel plugin (PoC)",
+  "type": "module",
+  "main": "./index.ts",
+  "license": "MIT",
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.10"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.7.2"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "lineworks",
+      "label": "LINE WORKS",
+      "selectionLabel": "LINE WORKS (Works Mobile)",
+      "detailLabel": "LINE WORKS Bot",
+      "docsPath": "/channels/lineworks",
+      "docsLabel": "lineworks",
+      "blurb": "LINE WORKS (Works Mobile) enterprise bot channel.",
+      "aliases": ["worksmobile", "works"],
+      "order": 76,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "openclaw-plugin-lineworks",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.4.10"
+    }
+  }
+}
