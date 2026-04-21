@@ -28,10 +28,19 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "smoke:send": "node --env-file=.env --experimental-strip-types smoke/send.ts",
-    "smoke:callback": "node --env-file=.env --experimental-strip-types smoke/callback.ts"
+    "test:coverage": "vitest run --coverage"
   },
+  "files": [
+    "api.ts",
+    "index.ts",
+    "setup-api.ts",
+    "setup-entry.ts",
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
   "openclaw": {
     "extensions": [
       "./index.ts"

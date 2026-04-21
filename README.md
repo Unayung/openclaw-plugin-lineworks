@@ -72,30 +72,18 @@ npm test
 
 Covers: JWT assertion shape + signing, single-flight token refresh, failed-refresh recovery, HMAC signature verify (valid / tampered / wrong secret / missing header / truncated), inbound event parser (user / channel / sticker / location / join / leave / member / postback / unknown), outbound URL building, URL encoding of IDs, content envelope, error propagation, long-text chunking.
 
-### Live smoke tests (needs your bot credentials)
+### Live integration test (the whole point)
 
-Copy `.env.example` to `.env` and fill in the LINE WORKS credentials.
+Install the plugin into a running openclaw host and DM your bot — see the
+"Install into openclaw" section below. The openclaw gateway is the real
+integration surface; unit tests cover the primitives offline.
 
-Send a message to a user:
-```bash
-npm run smoke:send -- user <userId> "hello from the plugin"
-```
-
-Send a message to a channel:
-```bash
-npm run smoke:send -- channel <channelId> "hello from the plugin"
-```
-
-Receive webhooks (with signature verification and optional echo):
-```bash
-LINEWORKS_ECHO=1 npm run smoke:callback
-# in another terminal:
-ngrok http 8787
-# paste https://<something>.ngrok-free.app/callback into the Developer Console as the bot Callback URL
-# then DM your bot — the callback server will log parsed events and echo text back
-```
-
-If `parseInboundEvent` logs `{ kind: "unknown" }` on a real event, the LINE WORKS event-type string is something other than what the parser currently maps — grab the raw `type` from the log and add it to `src/webhook.ts`.
+Earlier drafts shipped standalone smoke scripts under `smoke/` (direct
+LINE WORKS API calls from Node). Those were removed because they trigger
+openclaw's plugin security scanner ("env var access + outbound fetch"
+flags the credential-harvesting heuristic). The exact same code paths
+(`getAccessToken`, `verifySignature`, `parseInboundEvent`, `sendText`)
+run inside the installed plugin.
 
 ### Install into openclaw (end-to-end with the agent)
 
