@@ -19,6 +19,7 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     dmPolicy: "pairing",
     groupPolicy: "allowlist",
     groupRequireMention: false,
+    botMentionHandle: undefined,
     allowFrom: [],
     groupAllowFrom: [],
     config: {},

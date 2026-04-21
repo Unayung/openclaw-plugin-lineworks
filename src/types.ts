@@ -27,6 +27,13 @@ interface LineWorksAccountBaseConfig {
   thinkingAck?: LineWorksThinkingAckConfig;
   /** When true, the bot only responds to group messages that @mention it. */
   groupRequireMention?: boolean;
+  /**
+   * The @handle users type to mention this bot (without the leading @).
+   * Example: "Racco" matches text containing "@Racco". Case-insensitive.
+   * When unset, any @-token in the text is treated as a likely mention
+   * (the PoC default, noisy in busy groups).
+   */
+  botMentionHandle?: string;
 }
 
 export interface LineWorksConfig extends LineWorksAccountBaseConfig {
@@ -58,6 +65,7 @@ export interface ResolvedLineWorksAccount {
   dmPolicy: LineWorksDmPolicy;
   groupPolicy: LineWorksGroupPolicy;
   groupRequireMention: boolean;
+  botMentionHandle: string | undefined;
   allowFrom: string[];
   groupAllowFrom: string[];
   config: LineWorksConfig & LineWorksAccountConfig;

@@ -29,6 +29,7 @@ const LineWorksCommonConfigSchema = z.object({
   webhookPath: z.string().optional(),
   thinkingAck: ThinkingAckSchema.optional(),
   groupRequireMention: z.boolean().optional().default(false),
+  botMentionHandle: z.string().optional(),
 });
 
 const LineWorksAccountConfigSchema = LineWorksCommonConfigSchema.strict();

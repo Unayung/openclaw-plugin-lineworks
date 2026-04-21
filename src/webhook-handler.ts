@@ -71,11 +71,15 @@ function headerValue(header: string | string[] | undefined): string | undefined 
 }
 
 /**
- * Did the incoming message @mention the bot? LINE WORKS groups include a
- * `mentionees` array on text content with each mention's accountId. We compare
- * against the bot's own accountId (which for LINE WORKS bots looks like the
- * botId surfaced in config). Falls back to a naive `@` token presence check
- * so direct "@" mentions without structured metadata still work.
+ * Did the incoming message @mention the bot?
+ *
+ *   1. Structured: check content.mentionees[] for an accountId equal to the
+ *      bot's botId or serviceAccount. LINE WORKS populates this when the
+ *      user picks the bot from the @-autocomplete selector.
+ *   2. Handle match: if `botMentionHandle` is configured (e.g. "Racco"), any
+ *      text containing "@Racco" (case-insensitive, word-bounded) counts.
+ *   3. Fallback: when no handle is configured, accept any @-token — noisy
+ *      but keeps the bot responsive in a bare config.
  */
 function isMentioningBot(
   content: {
@@ -86,16 +90,23 @@ function isMentioningBot(
   account: ResolvedLineWorksAccount,
 ): boolean {
   if (content.type !== "text") return false;
+
   const mentionees = content.mentionees ?? [];
   for (const m of mentionees) {
     if (m.accountId && (m.accountId === account.botId || m.accountId === account.serviceAccount)) {
       return true;
     }
   }
-  // Soft-fallback: any @ token is treated as a likely mention. This keeps the
-  // bot responsive when LINE WORKS doesn't populate `mentionees` (e.g. the bot
-  // name was typed as plain text without the selector).
+
   const text = content.text ?? "";
+  if (account.botMentionHandle) {
+    // Escape regex metas in the handle, then match `@<handle>` with a
+    // word-boundary after to avoid "@Racconi" matching "Racco".
+    const h = account.botMentionHandle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(^|[^\\w])@${h}(?![\\w])`, "i");
+    return re.test(text);
+  }
+
   return /(^|\s)@[^\s]/.test(text);
 }
 
@@ -186,16 +197,20 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
       // dispatch regardless. Mention is detected via content.mentionees (the
       // bot's accountId appearing) OR by the agent's display name token in
       // the text body (best-effort).
-      if (
-        event.kind === "channel-message" &&
-        account.groupRequireMention &&
-        !isMentioningBot(content, account)
-      ) {
+      if (event.kind === "channel-message" && account.groupRequireMention) {
+        const mentions = isMentioningBot(content, account);
+        const textPreview =
+          content.type === "text" ? (content.text ?? "").slice(0, 80) : `<${content.type}>`;
         log?.info?.(
-          `lineworks: group message in ${event.source.type === "channel" ? event.source.channelId : "?"} not mentioning bot — skipping (groupRequireMention=true)`,
+          `lineworks: mention-gate channelId=${event.source.type === "channel" ? event.source.channelId.slice(0, 8) : "?"} handle=${account.botMentionHandle ?? "<unset>"} mentions=${mentions} text="${textPreview}"`,
         );
-        respondNoContent(res);
-        return;
+        if (!mentions) {
+          log?.info?.(
+            `lineworks: group message not mentioning bot — skipping (groupRequireMention=true)`,
+          );
+          respondNoContent(res);
+          return;
+        }
       }
 
       let body = "";

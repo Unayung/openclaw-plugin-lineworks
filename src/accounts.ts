@@ -130,6 +130,7 @@ export function resolveLineWorksAccount(
     dmPolicy,
     groupPolicy,
     groupRequireMention: merged.groupRequireMention ?? false,
+    botMentionHandle: merged.botMentionHandle?.trim().replace(/^@/, "") || undefined,
     allowFrom: normalizeAllowFrom(merged.allowFrom),
     groupAllowFrom: normalizeAllowFrom(merged.groupAllowFrom),
     config: { ...channelCfg, ...merged },
