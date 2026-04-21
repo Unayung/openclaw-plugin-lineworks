@@ -87,15 +87,31 @@ export interface LineWorksOutboundTextMessage {
   text: string;
 }
 
-export interface LineWorksOutboundImageMessage {
+export interface LineWorksOutboundImageUrlMessage {
   type: "image";
-  previewUrl: string;
-  resourceUrl: string;
+  previewImageUrl: string;
+  originalContentUrl: string;
+}
+
+export interface LineWorksOutboundImageFileMessage {
+  type: "image";
+  fileId: string;
+}
+
+export type LineWorksOutboundImageMessage =
+  | LineWorksOutboundImageUrlMessage
+  | LineWorksOutboundImageFileMessage;
+
+export interface LineWorksOutboundFileMessage {
+  type: "file";
+  fileId: string;
+  fileName?: string;
 }
 
 export type LineWorksOutboundMessage =
   | LineWorksOutboundTextMessage
-  | LineWorksOutboundImageMessage;
+  | LineWorksOutboundImageMessage
+  | LineWorksOutboundFileMessage;
 
 export type LineWorksTarget =
   | { type: "user"; userId: string }

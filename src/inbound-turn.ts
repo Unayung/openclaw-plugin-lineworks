@@ -1,11 +1,15 @@
-import { downloadLineWorksAttachment } from "./attachments.js";
+import {
+  downloadLineWorksAttachment,
+  isHttpUrl,
+  uploadLineWorksAttachment,
+} from "./attachments.js";
 import {
   buildLineWorksInboundContext,
   type LineWorksInboundMedia,
   type LineWorksInboundMessage,
 } from "./inbound-context.js";
 import { getLineWorksRuntime } from "./runtime.js";
-import { sendText } from "./send.js";
+import { sendMessage, sendText } from "./send.js";
 import { buildLineWorksInboundSessionKey } from "./session-key.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
 
@@ -85,28 +89,90 @@ export async function dispatchLineWorksInboundTurn(params: {
     ctx: msgCtx,
     cfg: currentCfg,
     dispatcherOptions: {
-      deliver: async (payload: { text?: string; body?: string }) => {
-        const text = payload.text ?? payload.body;
-        if (!text) {
+      deliver: async (
+        payload: {
+          text?: string;
+          body?: string;
+          mediaUrl?: string;
+          mediaUrls?: string[];
+        },
+      ) => {
+        const text = payload.text ?? payload.body ?? "";
+        const mediaUrls: string[] = [
+          ...(payload.mediaUrls ?? []),
+          ...(payload.mediaUrl ? [payload.mediaUrl] : []),
+        ].filter((u) => !!u && u.trim().length > 0);
+
+        if (!text && mediaUrls.length === 0) {
           params.log?.info?.(
-            `LINE WORKS: deliver called with empty text for ${params.msg.from} (skipping send)`,
+            `LINE WORKS: deliver called with empty payload for ${params.msg.from} (skipping send)`,
           );
           return;
         }
-        const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+
         const targetDesc =
           replyTarget.type === "channel"
             ? `channel:${replyTarget.channelId}`
             : `user:${replyTarget.userId}`;
-        try {
-          await sendText({ account: params.account, target: replyTarget, text });
-          params.log?.info?.(
-            `LINE WORKS: reply delivered to ${targetDesc} (${text.length} chars): ${preview}`,
-          );
-        } catch (err) {
-          params.log?.error?.(
-            `LINE WORKS: failed to deliver reply to ${targetDesc}: ${String(err)}`,
-          );
+
+        // Send media first (if any), then any text caption — LINE WORKS
+        // shows them as separate messages in the same conversation.
+        for (const mediaUrl of mediaUrls) {
+          try {
+            if (isHttpUrl(mediaUrl)) {
+              // Public URL path — LINE WORKS fetches it directly. Must be HTTPS.
+              if (!mediaUrl.startsWith("https://")) {
+                throw new Error(
+                  `LINE WORKS requires https:// URLs for media (got: ${mediaUrl.slice(0, 80)})`,
+                );
+              }
+              await sendMessage({
+                account: params.account,
+                target: replyTarget,
+                message: {
+                  type: "image",
+                  previewImageUrl: mediaUrl,
+                  originalContentUrl: mediaUrl,
+                },
+              });
+            } else {
+              // Local file path — upload to LINE WORKS, then reference by fileId.
+              const localPath = mediaUrl.replace(/^file:\/\//, "");
+              const uploaded = await uploadLineWorksAttachment({
+                account: params.account,
+                filePath: localPath,
+              });
+              await sendMessage({
+                account: params.account,
+                target: replyTarget,
+                message: { type: "image", fileId: uploaded.fileId },
+              });
+              params.log?.info?.(
+                `LINE WORKS: uploaded local file ${uploaded.fileName} -> fileId=${uploaded.fileId}`,
+              );
+            }
+            params.log?.info?.(
+              `LINE WORKS: media delivered to ${targetDesc}: ${mediaUrl.slice(0, 120)}`,
+            );
+          } catch (err) {
+            params.log?.error?.(
+              `LINE WORKS: failed to deliver media to ${targetDesc} (${mediaUrl}): ${String(err)}`,
+            );
+          }
+        }
+
+        if (text) {
+          const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+          try {
+            await sendText({ account: params.account, target: replyTarget, text });
+            params.log?.info?.(
+              `LINE WORKS: reply delivered to ${targetDesc} (${text.length} chars): ${preview}`,
+            );
+          } catch (err) {
+            params.log?.error?.(
+              `LINE WORKS: failed to deliver reply to ${targetDesc}: ${String(err)}`,
+            );
+          }
         }
       },
       onReplyStart: () => {

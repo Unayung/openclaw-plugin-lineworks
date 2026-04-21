@@ -307,13 +307,18 @@ export function createLineWorksPlugin(): LineWorksPlugin {
       sendMedia: async ({ to, mediaUrl, accountId, cfg }: LineWorksSendContext) => {
         if (!mediaUrl) throw new Error("LINE WORKS: sendMedia requires mediaUrl");
         const { account, target } = resolveSendContext({ cfg, accountId, to });
+        if (!/^https:\/\//i.test(mediaUrl)) {
+          throw new Error(
+            `LINE WORKS outbound.sendMedia requires https:// URL; got ${mediaUrl.slice(0, 80)}. Use the deliver path for local files (auto-uploads).`,
+          );
+        }
         await sendMessage({
           account,
           target,
           message: {
             type: "image",
-            previewUrl: mediaUrl,
-            resourceUrl: mediaUrl,
+            previewImageUrl: mediaUrl,
+            originalContentUrl: mediaUrl,
           },
         });
         return attachChannelToResult(LINEWORKS_CHANNEL_ID, {

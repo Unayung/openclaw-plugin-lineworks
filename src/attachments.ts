@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { buildRandomTempFilePath } from "openclaw/plugin-sdk/temp-path";
 import { getAccessToken } from "./auth.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
@@ -87,8 +88,81 @@ export async function downloadLineWorksAttachment(args: {
   }
 
   const ext = extensionFor(contentType);
-  const path = buildRandomTempFilePath({ prefix: "lineworks-media", extension: ext });
-  await fs.promises.writeFile(path, buf);
+  const outPath = buildRandomTempFilePath({ prefix: "lineworks-media", extension: ext });
+  await fs.promises.writeFile(outPath, buf);
 
-  return { path, contentType, size: buf.byteLength };
+  return { path: outPath, contentType, size: buf.byteLength };
+}
+
+function mimeFor(filePath: string): string {
+  const ext = path.extname(filePath).slice(1).toLowerCase();
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  if (ext === "heic") return "image/heic";
+  if (ext === "mp4") return "video/mp4";
+  if (ext === "mp3") return "audio/mpeg";
+  if (ext === "m4a") return "audio/mp4";
+  if (ext === "pdf") return "application/pdf";
+  return "application/octet-stream";
+}
+
+/**
+ * Upload a local file to LINE WORKS so it can be referenced by fileId in
+ * outbound messages. Two-step flow:
+ *   1. POST /v1.0/bots/{botId}/attachments  body={fileName}  → {uploadUrl, fileId}
+ *   2. POST uploadUrl  multipart/form-data (FileData, resourceName)
+ */
+export async function uploadLineWorksAttachment(args: {
+  account: ResolvedLineWorksAccount;
+  filePath: string;
+  fileName?: string;
+}): Promise<{ fileId: string; fileName: string }> {
+  const { account } = args;
+  const resolvedFileName = args.fileName ?? path.basename(args.filePath);
+  const access = await getAccessToken(account);
+
+  // Step 1 — request an upload URL
+  const step1 = await fetch(
+    `${LINEWORKS_API_BASE}/bots/${encodeURIComponent(account.botId)}/attachments`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `${access.tokenType} ${access.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ fileName: resolvedFileName }),
+    },
+  );
+  if (!step1.ok) {
+    const text = await step1.text().catch(() => "");
+    throw new Error(`LINE WORKS upload init failed: ${step1.status} ${text}`);
+  }
+  const init = (await step1.json()) as { uploadUrl: string; fileId: string };
+
+  // Step 2 — POST the binary to the returned uploadUrl
+  const bytes = await fs.promises.readFile(args.filePath);
+  const form = new FormData();
+  form.append(
+    "FileData",
+    new Blob([new Uint8Array(bytes)], { type: mimeFor(args.filePath) }),
+    resolvedFileName,
+  );
+  form.append("resourceName", resolvedFileName);
+  const step2 = await fetch(init.uploadUrl, {
+    method: "POST",
+    headers: { authorization: `${access.tokenType} ${access.token}` },
+    body: form,
+  });
+  if (!step2.ok) {
+    const text = await step2.text().catch(() => "");
+    throw new Error(`LINE WORKS upload bytes failed: ${step2.status} ${text}`);
+  }
+
+  return { fileId: init.fileId, fileName: resolvedFileName };
+}
+
+export function isHttpUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
 }
