@@ -1,4 +1,5 @@
 import {
+  downloadHttpsToTempFile,
   downloadLineWorksAttachment,
   isHttpUrl,
   uploadLineWorksAttachment,
@@ -265,16 +266,28 @@ export async function dispatchLineWorksInboundTurn(params: {
                   `LINE WORKS requires https:// URLs (got: ${mediaUrl.slice(0, 80)})`,
                 );
               }
-              const kind = mediaKindForExt(
-                extOf(new URL(mediaUrl).pathname || mediaUrl),
-              );
-              const content = buildContentFromHttpsUrl(kind, mediaUrl);
-              if (!content) {
-                throw new Error(
-                  `LINE WORKS cannot send ${kind} as URL without required metadata (use channelData or upload a local file)`,
-                );
+              const urlKind = mediaKindForExt(extOf(new URL(mediaUrl).pathname || mediaUrl));
+              // Images can be sent by URL directly (LINE WORKS fetches it).
+              // Video/audio/file can't — LINE WORKS requires fileId or a
+              // preview thumbnail we don't have. Download to temp, then
+              // upload via the attachment API and send as {type, fileId}.
+              if (urlKind === "image") {
+                const content = buildContentFromHttpsUrl(urlKind, mediaUrl);
+                if (content) {
+                  outbound.push(content);
+                  break;
+                }
               }
-              outbound.push(content);
+              const dl = await downloadHttpsToTempFile(mediaUrl);
+              const uploaded = await uploadLineWorksAttachment({
+                account: params.account,
+                filePath: dl.path,
+                fileName: dl.fileName,
+              });
+              outbound.push(buildContentFromUpload(urlKind, uploaded));
+              params.log?.info?.(
+                `LINE WORKS: fetched ${mediaUrl} (${dl.size}B) → uploaded as ${urlKind} fileId=${uploaded.fileId}`,
+              );
             } else {
               const localPath = mediaUrl.replace(/^file:\/\//, "");
               const kind = mediaKindForExt(extOf(localPath));

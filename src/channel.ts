@@ -22,7 +22,7 @@ import {
   registerLineWorksWebhookRoute,
   validateLineWorksStartup,
 } from "./gateway-runtime.js";
-import { uploadLineWorksAttachment } from "./attachments.js";
+import { downloadHttpsToTempFile, uploadLineWorksAttachment } from "./attachments.js";
 import { sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
@@ -376,10 +376,20 @@ export function createLineWorksPlugin(): LineWorksPlugin {
       sendMedia: async ({ to, mediaUrl, accountId, cfg }: LineWorksSendContext) => {
         if (!mediaUrl) throw new Error("LINE WORKS: sendMedia requires mediaUrl");
         const { account, target } = resolveSendContext({ cfg, accountId, to });
-        // Branch on scheme: https fetches direct; local path (or file://)
-        // gets uploaded via LINE WORKS attachment API and sent by fileId.
-        // Extension drives the message type (image|video|audio|file).
-        if (/^https:\/\//i.test(mediaUrl)) {
+
+        // Extension (from URL path or local path) drives message type.
+        const pathForExt = /^https?:\/\//i.test(mediaUrl)
+          ? (new URL(mediaUrl).pathname || "")
+          : mediaUrl.replace(/^file:\/\//, "");
+        const ext = pathForExt.toLowerCase().split(".").pop() ?? "";
+        const isImage = ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext);
+        const isVideo = ["mp4", "mov", "m4v", "avi", "webm"].includes(ext);
+        const isAudio = ["mp3", "m4a", "wav", "aac", "ogg", "oga"].includes(ext);
+
+        // HTTPS image: send URL directly (LINE WORKS fetches). Anything else —
+        // video, audio, file, or HTTP (non-TLS) — must be uploaded first: LINE
+        // WORKS either needs a fileId (video/audio/file) or refuses http://.
+        if (isImage && /^https:\/\//i.test(mediaUrl)) {
           await sendMessage({
             account,
             target,
@@ -390,12 +400,16 @@ export function createLineWorksPlugin(): LineWorksPlugin {
             },
           });
         } else {
-          const localPath = mediaUrl.replace(/^file:\/\//, "");
-          const ext = localPath.toLowerCase().split(".").pop() ?? "";
-          const isImage = ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext);
-          const isVideo = ["mp4", "mov", "m4v", "avi", "webm"].includes(ext);
-          const isAudio = ["mp3", "m4a", "wav", "aac", "ogg", "oga"].includes(ext);
-          const uploaded = await uploadLineWorksAttachment({ account, filePath: localPath });
+          let filePath: string;
+          let fileName: string | undefined;
+          if (/^https?:\/\//i.test(mediaUrl)) {
+            const dl = await downloadHttpsToTempFile(mediaUrl);
+            filePath = dl.path;
+            fileName = dl.fileName;
+          } else {
+            filePath = mediaUrl.replace(/^file:\/\//, "");
+          }
+          const uploaded = await uploadLineWorksAttachment({ account, filePath, fileName });
           const message = isImage
             ? ({ type: "image" as const, fileId: uploaded.fileId })
             : isVideo

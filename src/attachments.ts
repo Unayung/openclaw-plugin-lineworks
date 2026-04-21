@@ -166,3 +166,37 @@ export async function uploadLineWorksAttachment(args: {
 export function isHttpUrl(s: string): boolean {
   return /^https?:\/\//i.test(s);
 }
+
+/**
+ * Download an HTTPS URL to a temp file and return the local path. Used when
+ * outbound media is referenced by URL but LINE WORKS needs an uploaded fileId
+ * (e.g., video, audio, and generic file attachments that LINE WORKS cannot
+ * consume as a bare URL).
+ *
+ * The extension is inferred from the URL path and then from Content-Type as
+ * a fallback so the upload + fileId-message path can pick the right shape.
+ */
+export async function downloadHttpsToTempFile(
+  url: string,
+  maxBytes = 50 * 1024 * 1024,
+): Promise<{ path: string; contentType: string; size: number; fileName: string }> {
+  const res = await fetch(url, { method: "GET", redirect: "follow" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`download failed: ${res.status} ${text.slice(0, 120)}`);
+  }
+  const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength > maxBytes) {
+    throw new Error(`downloaded file exceeds ${maxBytes} bytes (${buf.byteLength})`);
+  }
+  // Prefer extension from URL pathname; fall back to content-type guess.
+  const urlExt = (new URL(url).pathname.split(".").pop() ?? "").toLowerCase();
+  const isKnownExt = /^[a-z0-9]{1,5}$/.test(urlExt);
+  const ext = isKnownExt ? urlExt : extensionFor(contentType);
+  const fileName =
+    (new URL(url).pathname.split("/").pop() || "download").replace(/[^\w.\-]/g, "_") || `media.${ext}`;
+  const outPath = buildRandomTempFilePath({ prefix: "lineworks-download", extension: ext });
+  await fs.promises.writeFile(outPath, buf);
+  return { path: outPath, contentType, size: buf.byteLength, fileName };
+}
