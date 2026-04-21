@@ -1,4 +1,5 @@
 import { getAccessToken } from "./auth.js";
+import { chunkText, LINEWORKS_TEXT_CHUNK_LIMIT } from "./chunk-text.js";
 import type {
   LineWorksOutboundMessage,
   LineWorksTarget,
@@ -6,7 +7,6 @@ import type {
 } from "./types.js";
 
 const LINEWORKS_API_BASE = "https://www.worksapis.com/v1.0";
-const TEXT_CHUNK_LIMIT = 2000;
 
 export async function sendMessage(args: {
   account: ResolvedLineWorksAccount;
@@ -37,7 +37,7 @@ export async function sendText(args: {
   target: LineWorksTarget;
   text: string;
 }): Promise<void> {
-  const chunks = splitText(args.text, TEXT_CHUNK_LIMIT);
+  const chunks = chunkText(args.text, LINEWORKS_TEXT_CHUNK_LIMIT);
   for (const chunk of chunks) {
     await sendMessage({
       account: args.account,
@@ -55,18 +55,3 @@ function buildSendUrl(account: ResolvedLineWorksAccount, target: LineWorksTarget
   return `${LINEWORKS_API_BASE}/bots/${botId}/channels/${encodeURIComponent(target.channelId)}/messages`;
 }
 
-function splitText(text: string, limit: number): string[] {
-  if (text.length <= limit) return [text];
-  const chunks: string[] = [];
-  let cursor = 0;
-  while (cursor < text.length) {
-    let end = Math.min(cursor + limit, text.length);
-    if (end < text.length) {
-      const nl = text.lastIndexOf("\n", end);
-      if (nl > cursor + limit * 0.5) end = nl;
-    }
-    chunks.push(text.slice(cursor, end));
-    cursor = end;
-  }
-  return chunks;
-}

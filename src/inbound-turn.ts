@@ -3,6 +3,7 @@ import {
   isHttpUrl,
   uploadLineWorksAttachment,
 } from "./attachments.js";
+import { chunkText, LINEWORKS_TEXT_CHUNK_LIMIT } from "./chunk-text.js";
 import { extractDirectives } from "./directives.js";
 import {
   buildLineWorksInboundContext,
@@ -47,23 +48,6 @@ function extOf(p: string): string {
   return p.toLowerCase().split(".").pop() ?? "";
 }
 
-// Mirror of src/send.ts:splitText used when we need to split before the last
-// chunk to carry a quickReply on the final message only.
-function splitTextForChunking(text: string, limit: number): string[] {
-  if (text.length <= limit) return [text];
-  const chunks: string[] = [];
-  let cursor = 0;
-  while (cursor < text.length) {
-    let end = Math.min(cursor + limit, text.length);
-    if (end < text.length) {
-      const nl = text.lastIndexOf("\n", end);
-      if (nl > cursor + limit * 0.5) end = nl;
-    }
-    chunks.push(text.slice(cursor, end));
-    cursor = end;
-  }
-  return chunks;
-}
 
 type MediaKind = "image" | "video" | "audio" | "file";
 function mediaKindForExt(ext: string): MediaKind {
@@ -331,12 +315,11 @@ export async function dispatchLineWorksInboundTurn(params: {
               // fold quickReply into the last via a single final sendMessage.
               const qr = (message as { quickReply?: unknown }).quickReply;
               if (qr) {
-                const CHUNK_LIMIT = 2000;
                 const text = (message as { text: string }).text;
-                if (text.length <= CHUNK_LIMIT) {
+                if (text.length <= LINEWORKS_TEXT_CHUNK_LIMIT) {
                   await sendMessage({ account: params.account, target: replyTarget, message });
                 } else {
-                  const chunks = splitTextForChunking(text, CHUNK_LIMIT);
+                  const chunks = chunkText(text, LINEWORKS_TEXT_CHUNK_LIMIT);
                   for (let i = 0; i < chunks.length - 1; i++) {
                     await sendText({
                       account: params.account,

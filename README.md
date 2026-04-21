@@ -1,4 +1,4 @@
-# @openclaw-plugins/lineworks
+# @unayung/lineworks
 
 Third-party OpenClaw channel plugin for **LINE WORKS** (Works Mobile) — the
 enterprise messaging product by LINE. Different platform, different API, and
@@ -38,7 +38,7 @@ openclaw plugins install --link /absolute/path/to/lineworks-plugin
 openclaw gateway restart
 
 # Or once published to npm:
-openclaw plugins install @openclaw-plugins/lineworks
+openclaw plugins install @unayung/lineworks
 ```
 
 `--link` symlinks the source dir instead of copying. Code edits are picked up
@@ -302,7 +302,7 @@ into the agent's own system prompt instead.
 | Symptom | Likely cause / fix |
 |---|---|
 | Install blocked by "credential harvesting" scan | Something in the plugin tree mixes `process.env` + `fetch` in one file. Ship only entry-point files + `src/`; exclude dev scripts. |
-| `Plugin manifest id "lineworks" differs from npm package name …` | Informational. Package name must equal manifest id or its `@scope/` unscoped form. This plugin uses `@openclaw-plugins/lineworks` which satisfies the check. |
+| `Plugin manifest id "lineworks" differs from npm package name …` | Informational. Package name must equal manifest id or its `@scope/` unscoped form. This plugin uses `@unayung/lineworks` which satisfies the check. |
 | Webhook fails with 401 from `www.worksapis.com` on outbound | Service Account doesn't have `bot` / `bot.read` scopes granted in the Developer Console. Granting scopes in the token request isn't enough — the app must be authorized for them. |
 | `error:0680008E:asn1 encoding routines::not enough data` | Private key string corrupted by JSON round-trip. Switch to `privateKeyFile` pointing at a real PEM file on disk. |
 | 401 on attachment download | Same as above (scopes) **or** Node's fetch stripped the Authorization header on 302 redirect. This plugin handles that manually — if you still see it, likely scopes. |
