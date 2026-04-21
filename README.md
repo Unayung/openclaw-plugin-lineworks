@@ -4,6 +4,8 @@
 [![GitHub release](https://img.shields.io/github/v/tag/Unayung/openclaw-plugin-lineworks.svg?label=github&sort=semver)](https://github.com/Unayung/openclaw-plugin-lineworks/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
+**English** · [繁體中文](./README.zh-TW.md) · [日本語](./README.ja.md)
+
 Third-party OpenClaw channel plugin for **LINE WORKS** (Works Mobile) — the
 enterprise messaging product by LINE. Different platform, different API, and
 different bot model than consumer LINE.
