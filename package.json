@@ -6,10 +6,10 @@
   "main": "./index.ts",
   "license": "MIT",
   "dependencies": {
-    "jose": "^5.9.6"
+    "jose": "^5.10.0"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.4.10"
+    "openclaw": "^2026.4.15"
   },
   "peerDependenciesMeta": {
     "openclaw": {
@@ -17,8 +17,20 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^22.9.0",
-    "typescript": "^5.7.2"
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.19.17",
+    "@vitest/coverage-v8": "^4.1.4",
+    "express": "^5.2.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "smoke:send": "node --env-file=.env --experimental-strip-types smoke/send.ts",
+    "smoke:callback": "node --env-file=.env --experimental-strip-types smoke/callback.ts"
   },
   "openclaw": {
     "extensions": [
@@ -33,7 +45,10 @@
       "docsPath": "/channels/lineworks",
       "docsLabel": "lineworks",
       "blurb": "LINE WORKS (Works Mobile) enterprise bot channel.",
-      "aliases": ["worksmobile", "works"],
+      "aliases": [
+        "worksmobile",
+        "works"
+      ],
       "order": 76,
       "quickstartAllowFrom": true
     },

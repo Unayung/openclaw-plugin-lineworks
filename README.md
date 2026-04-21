@@ -57,15 +57,50 @@ and the Developers docs. Confirmed:
    follows LINE-family convention but is not independently confirmed from
    LINE WORKS English docs. Verify against a live callback sample.
 
-## Install (host-side, once wiring is done)
+## Testing
+
+### Unit tests (offline, no tenant needed)
+
+```bash
+npm install
+npm run typecheck
+npm test
+```
+
+Covers: JWT assertion shape + signing, single-flight token refresh, failed-refresh recovery, HMAC signature verify (valid / tampered / wrong secret / missing header / truncated), inbound event parser (user / channel / sticker / location / join / leave / member / postback / unknown), outbound URL building, URL encoding of IDs, content envelope, error propagation, long-text chunking.
+
+### Live smoke tests (needs your bot credentials)
+
+Copy `.env.example` to `.env` and fill in the LINE WORKS credentials.
+
+Send a message to a user:
+```bash
+npm run smoke:send -- user <userId> "hello from the plugin"
+```
+
+Send a message to a channel:
+```bash
+npm run smoke:send -- channel <channelId> "hello from the plugin"
+```
+
+Receive webhooks (with signature verification and optional echo):
+```bash
+LINEWORKS_ECHO=1 npm run smoke:callback
+# in another terminal:
+ngrok http 8787
+# paste https://<something>.ngrok-free.app/callback into the Developer Console as the bot Callback URL
+# then DM your bot — the callback server will log parsed events and echo text back
+```
+
+If `parseInboundEvent` logs `{ kind: "unknown" }` on a real event, the LINE WORKS event-type string is something other than what the parser currently maps — grab the raw `type` from the log and add it to `src/webhook.ts`.
+
+### Install into openclaw (blocked — ChannelPlugin stub)
+
+Not runnable yet. Once `src/channel.ts` is wired against a pinned openclaw host version:
 
 ```bash
 openclaw plugin install openclaw-plugin-lineworks
-```
-
-Or point at a local path during development:
-
-```bash
+# or, for local dev:
 openclaw plugin install /path/to/openclaw-plugin-lineworks
 ```
 

@@ -13,6 +13,6 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": false
   },
-  "include": ["./*.ts", "./src/**/*.ts"],
+  "include": ["./*.ts", "./src/**/*.ts", "./smoke/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
