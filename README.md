@@ -1,5 +1,9 @@
 # @unayung/lineworks
 
+[![npm](https://img.shields.io/npm/v/@unayung/lineworks.svg?label=npm)](https://www.npmjs.com/package/@unayung/lineworks)
+[![GitHub release](https://img.shields.io/github/v/tag/Unayung/openclaw-plugin-lineworks.svg?label=github&sort=semver)](https://github.com/Unayung/openclaw-plugin-lineworks/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Third-party OpenClaw channel plugin for **LINE WORKS** (Works Mobile) — the
 enterprise messaging product by LINE. Different platform, different API, and
 different bot model than consumer LINE.
@@ -32,17 +36,37 @@ file, Flex cards, pinned locations, and tap-reply buttons.
 
 ### 2. Install the plugin
 
-```bash
-# Dev/local path (recommended while iterating):
-openclaw plugins install --link /absolute/path/to/lineworks-plugin
-openclaw gateway restart
+**Recommended — install from npm (or ClawHub):**
 
-# Or once published to npm:
+```bash
 openclaw plugins install @unayung/lineworks
+openclaw gateway restart
 ```
 
-`--link` symlinks the source dir instead of copying. Code edits are picked up
-on the next `openclaw gateway restart`.
+`openclaw plugins install` hits ClawHub first and falls back to npm, so this
+one command works whichever registry the plugin is indexed on.
+
+Alternative forms:
+
+```bash
+# explicit ClawHub lookup (skips the ClawHub-then-npm fallback order):
+openclaw plugins install clawhub:lineworks
+
+# pinning an exact npm version:
+openclaw plugins install @unayung/lineworks@0.1.0-poc.1
+
+# dev / local checkout (symlinks the source dir so code edits are picked up
+# on the next `openclaw gateway restart` without reinstalling):
+git clone https://github.com/Unayung/openclaw-plugin-lineworks.git
+openclaw plugins install --link /absolute/path/to/openclaw-plugin-lineworks
+```
+
+Verify it loaded:
+
+```bash
+openclaw plugins list | grep lineworks      # should show "loaded"
+openclaw plugins inspect lineworks
+```
 
 ### 3. Developer Console setup — do all of these
 
