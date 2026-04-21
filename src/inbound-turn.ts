@@ -1,4 +1,9 @@
-import { buildLineWorksInboundContext, type LineWorksInboundMessage } from "./inbound-context.js";
+import { downloadLineWorksAttachment } from "./attachments.js";
+import {
+  buildLineWorksInboundContext,
+  type LineWorksInboundMedia,
+  type LineWorksInboundMessage,
+} from "./inbound-context.js";
 import { getLineWorksRuntime } from "./runtime.js";
 import { sendText } from "./send.js";
 import { buildLineWorksInboundSessionKey } from "./session-key.js";
@@ -47,10 +52,30 @@ export async function dispatchLineWorksInboundTurn(params: {
     identityLinks: currentCfg.session?.identityLinks,
   });
 
+  const media: LineWorksInboundMedia[] = [...(params.msg.media ?? [])];
+  for (const resourceId of params.msg.attachmentResourceIds ?? []) {
+    try {
+      const dl = await downloadLineWorksAttachment({ account: params.account, resourceId });
+      media.push({ path: dl.path, contentType: dl.contentType });
+      params.log?.info?.(
+        `LINE WORKS: downloaded attachment ${resourceId} (${dl.size} bytes, ${dl.contentType})`,
+      );
+    } catch (err) {
+      params.log?.error?.(
+        `LINE WORKS: failed to download attachment ${resourceId}: ${String(err)}`,
+      );
+    }
+  }
+
+  const msgWithMedia: LineWorksInboundMessage = {
+    ...params.msg,
+    media: media.length ? media : undefined,
+  };
+
   const msgCtx = buildLineWorksInboundContext({
     finalizeInboundContext: rt.channel.reply.finalizeInboundContext,
     account: params.account,
-    msg: params.msg,
+    msg: msgWithMedia,
     sessionKey,
   });
 

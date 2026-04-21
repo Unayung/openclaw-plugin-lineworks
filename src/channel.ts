@@ -22,7 +22,7 @@ import {
   registerLineWorksWebhookRoute,
   validateLineWorksStartup,
 } from "./gateway-runtime.js";
-import { sendText } from "./send.js";
+import { sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
 
@@ -43,9 +43,11 @@ type LineWorksSendContext = {
   cfg: OpenClawConfig;
   to: string;
   text?: string;
+  mediaUrl?: string;
   accountId?: string | null;
 };
 type LineWorksSendTextContext = LineWorksSendContext & { text: string };
+type LineWorksSendMediaContext = LineWorksSendContext & { mediaUrl: string };
 
 type LineWorksOutboundResult = {
   channel: typeof LINEWORKS_CHANNEL_ID;
@@ -90,6 +92,7 @@ type LineWorksPlugin = Omit<
     deliveryMode: "gateway";
     textChunkLimit: number;
     sendText: (ctx: LineWorksSendTextContext) => Promise<LineWorksOutboundResult>;
+    sendMedia: (ctx: LineWorksSendMediaContext) => Promise<LineWorksOutboundResult>;
   };
   gateway: {
     startAccount: (ctx: LineWorksGatewayContext) => Promise<unknown>;
@@ -147,6 +150,33 @@ const collectLineWorksSecurityWarnings =
       account.allowFrom.length === 0 &&
       '- LINE WORKS: dmPolicy="allowlist" with empty allowFrom blocks all senders.',
   );
+
+function resolveSendContext(args: {
+  cfg: OpenClawConfig;
+  accountId?: string | null;
+  to: string;
+}): {
+  account: ResolvedLineWorksAccount;
+  target: { type: "user"; userId: string } | { type: "channel"; channelId: string };
+} {
+  const account = resolveLineWorksAccount(args.cfg ?? {}, args.accountId);
+  if (!hasLineWorksCredentials(account)) {
+    throw new Error("LINE WORKS: account is missing credentials");
+  }
+  const normalized = args.to
+    .trim()
+    .replace(/^lineworks:(user|channel):/i, (_m: string, kind: string) => `${kind}:`)
+    .replace(/^lineworks:/i, "");
+  const channelMatch = normalized.match(/^channel:(.+)$/i);
+  const userMatch = normalized.match(/^user:(.+)$/i);
+  const target =
+    channelMatch && channelMatch[1]
+      ? ({ type: "channel" as const, channelId: channelMatch[1] })
+      : userMatch && userMatch[1]
+        ? ({ type: "user" as const, userId: userMatch[1] })
+        : ({ type: "user" as const, userId: normalized });
+  return { account, target };
+}
 
 export function createLineWorksPlugin(): LineWorksPlugin {
   return createChatChannelPlugin({
@@ -267,23 +297,25 @@ export function createLineWorksPlugin(): LineWorksPlugin {
       deliveryMode: "gateway" as const,
       textChunkLimit: 2000,
       sendText: async ({ to, text, accountId, cfg }: LineWorksSendTextContext) => {
-        const account = resolveLineWorksAccount(cfg ?? {}, accountId);
-        if (!hasLineWorksCredentials(account)) {
-          throw new Error("LINE WORKS: account is missing credentials");
-        }
-        const normalized = to
-          .trim()
-          .replace(/^lineworks:(user|channel):/i, (_m, kind) => `${kind}:`)
-          .replace(/^lineworks:/i, "");
-        const channelMatch = normalized.match(/^channel:(.+)$/i);
-        const userMatch = normalized.match(/^user:(.+)$/i);
-        const target =
-          channelMatch && channelMatch[1]
-            ? ({ type: "channel" as const, channelId: channelMatch[1] })
-            : userMatch && userMatch[1]
-              ? ({ type: "user" as const, userId: userMatch[1] })
-              : ({ type: "user" as const, userId: normalized });
+        const { account, target } = resolveSendContext({ cfg, accountId, to });
         await sendText({ account, target, text });
+        return attachChannelToResult(LINEWORKS_CHANNEL_ID, {
+          messageId: `lw-${Date.now()}`,
+          chatId: to,
+        });
+      },
+      sendMedia: async ({ to, mediaUrl, accountId, cfg }: LineWorksSendContext) => {
+        if (!mediaUrl) throw new Error("LINE WORKS: sendMedia requires mediaUrl");
+        const { account, target } = resolveSendContext({ cfg, accountId, to });
+        await sendMessage({
+          account,
+          target,
+          message: {
+            type: "image",
+            previewUrl: mediaUrl,
+            resourceUrl: mediaUrl,
+          },
+        });
         return attachChannelToResult(LINEWORKS_CHANNEL_ID, {
           messageId: `lw-${Date.now()}`,
           chatId: to,

@@ -132,10 +132,41 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
         return;
       }
 
-      if (!event.content || event.content.type !== "text") {
-        log?.info?.(`lineworks: ignoring non-text content type=${event.content?.type ?? "none"}`);
+      // Accept text, image, file, sticker, location. Anything else acks silently.
+      const content = event.content;
+      if (!content) {
         respondNoContent(res);
         return;
+      }
+      let body = "";
+      let imageResourceId: string | undefined;
+      let fileResourceId: string | undefined;
+      let fileName: string | undefined;
+      switch (content.type) {
+        case "text":
+          body = content.text;
+          break;
+        case "image":
+          imageResourceId = content.resourceId;
+          break;
+        case "file":
+          fileResourceId = content.resourceId;
+          fileName = content.fileName;
+          body = fileName ? `[file: ${fileName}]` : "[file]";
+          break;
+        case "sticker":
+          body = `[sticker ${content.packageId}:${content.stickerId}]`;
+          break;
+        case "location":
+          body = `[location${content.title ? ` ${content.title}` : ""} ${content.latitude},${content.longitude}]`;
+          break;
+        case "postback":
+          body = `[postback] ${content.data}`;
+          break;
+        default:
+          log?.info?.(`lineworks: ignoring unknown content type`);
+          respondNoContent(res);
+          return;
       }
 
       const from = event.source.type === "channel" ? (event.source.userId ?? "unknown") : event.source.userId;
@@ -143,14 +174,17 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
         event.source.type === "channel" ? event.source.channelId : event.source.userId;
 
       const msg: LineWorksInboundMessage = {
-        body: event.content.text,
+        body,
         from,
         senderName: from,
         conversationId,
         chatType: event.source.type === "channel" ? "group" : "direct",
         accountId: account.accountId,
         commandAuthorized: true,
-      };
+        ...(imageResourceId || fileResourceId
+          ? { attachmentResourceIds: [imageResourceId ?? fileResourceId!] }
+          : {}),
+      } as LineWorksInboundMessage;
 
       respondNoContent(res);
 
