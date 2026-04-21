@@ -1,6 +1,13 @@
 export type LineWorksDmPolicy = "open" | "allowlist" | "pairing" | "disabled";
 export type LineWorksGroupPolicy = "open" | "allowlist" | "disabled";
 
+export interface LineWorksThinkingAckConfig {
+  /** Ms to wait before sending the ack. 0 disables. Default 5000. */
+  delayMs?: number;
+  /** Text of the ack message. Default "⋯". */
+  text?: string;
+}
+
 interface LineWorksAccountBaseConfig {
   enabled?: boolean;
   clientId?: string;
@@ -17,6 +24,7 @@ interface LineWorksAccountBaseConfig {
   dmPolicy?: LineWorksDmPolicy;
   groupPolicy?: LineWorksGroupPolicy;
   webhookPath?: string;
+  thinkingAck?: LineWorksThinkingAckConfig;
 }
 
 export interface LineWorksConfig extends LineWorksAccountBaseConfig {
@@ -119,11 +127,71 @@ export interface LineWorksOutboundFlexMessage {
   contents: Record<string, unknown>;
 }
 
+export interface LineWorksOutboundVideoUrlMessage {
+  type: "video";
+  originalContentUrl: string;
+  previewImageUrl: string;
+}
+export interface LineWorksOutboundVideoFileMessage {
+  type: "video";
+  fileId: string;
+}
+export type LineWorksOutboundVideoMessage =
+  | LineWorksOutboundVideoUrlMessage
+  | LineWorksOutboundVideoFileMessage;
+
+export interface LineWorksOutboundAudioUrlMessage {
+  type: "audio";
+  originalContentUrl: string;
+  duration: number;
+}
+export interface LineWorksOutboundAudioFileMessage {
+  type: "audio";
+  fileId: string;
+  duration: number;
+}
+export type LineWorksOutboundAudioMessage =
+  | LineWorksOutboundAudioUrlMessage
+  | LineWorksOutboundAudioFileMessage;
+
+export interface LineWorksOutboundLocationMessage {
+  type: "location";
+  title: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Quick reply attached to any message. Each item renders as a tappable chip
+ * under the message; tapping sends the action back (as a new user message for
+ * "message" type, as a postback for "postback", etc.).
+ */
+export type LineWorksQuickReplyAction =
+  | { type: "message"; label: string; text: string }
+  | { type: "uri"; label: string; uri: string }
+  | { type: "postback"; label: string; data: string; displayText?: string }
+  | { type: "camera"; label: string }
+  | { type: "cameraRoll"; label: string }
+  | { type: "location"; label: string };
+
+export interface LineWorksQuickReplyItem {
+  action: LineWorksQuickReplyAction;
+  imageUrl?: string;
+}
+
+export interface LineWorksQuickReply {
+  items: LineWorksQuickReplyItem[];
+}
+
 export type LineWorksOutboundMessage =
   | LineWorksOutboundTextMessage
   | LineWorksOutboundImageMessage
   | LineWorksOutboundFileMessage
-  | LineWorksOutboundFlexMessage;
+  | LineWorksOutboundFlexMessage
+  | LineWorksOutboundVideoMessage
+  | LineWorksOutboundAudioMessage
+  | LineWorksOutboundLocationMessage;
 
 export type LineWorksTarget =
   | { type: "user"; userId: string }

@@ -4,6 +4,13 @@ import { buildChannelConfigSchema } from "openclaw/plugin-sdk/channel-config-sch
 const DmPolicySchema = z.enum(["open", "allowlist", "pairing", "disabled"]);
 const GroupPolicySchema = z.enum(["open", "allowlist", "disabled"]);
 
+const ThinkingAckSchema = z
+  .object({
+    delayMs: z.number().int().min(0).optional(),
+    text: z.string().optional(),
+  })
+  .strict();
+
 const LineWorksCommonConfigSchema = z.object({
   enabled: z.boolean().optional(),
   clientId: z.string().optional(),
@@ -20,6 +27,7 @@ const LineWorksCommonConfigSchema = z.object({
   dmPolicy: DmPolicySchema.optional().default("pairing"),
   groupPolicy: GroupPolicySchema.optional().default("allowlist"),
   webhookPath: z.string().optional(),
+  thinkingAck: ThinkingAckSchema.optional(),
 });
 
 const LineWorksAccountConfigSchema = LineWorksCommonConfigSchema.strict();

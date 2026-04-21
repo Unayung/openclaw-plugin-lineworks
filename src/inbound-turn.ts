@@ -3,7 +3,7 @@ import {
   isHttpUrl,
   uploadLineWorksAttachment,
 } from "./attachments.js";
-import { extractFlexDirectives } from "./flex-directive.js";
+import { extractDirectives } from "./directives.js";
 import {
   buildLineWorksInboundContext,
   type LineWorksInboundMedia,
@@ -12,9 +12,16 @@ import {
 import { getLineWorksRuntime } from "./runtime.js";
 import { sendMessage, sendText } from "./send.js";
 import { buildLineWorksInboundSessionKey } from "./session-key.js";
-import type { ResolvedLineWorksAccount } from "./types.js";
+import type {
+  LineWorksOutboundMessage,
+  LineWorksQuickReply,
+  ResolvedLineWorksAccount,
+} from "./types.js";
 
 const CHANNEL_ID = "lineworks";
+const DEFAULT_ACK_DELAY_MS = 5000;
+const DEFAULT_ACK_TEXT = "⋯";
+const DEFAULT_AUDIO_DURATION_MS = 10_000;
 
 type LineWorksChannelLog = {
   info?: (...args: unknown[]) => void;
@@ -30,6 +37,77 @@ function buildReplyTarget(msg: LineWorksInboundMessage): LineWorksTarget {
   return msg.chatType === "group"
     ? { type: "channel", channelId: msg.conversationId }
     : { type: "user", userId: msg.from };
+}
+
+function targetDescription(t: LineWorksTarget): string {
+  return t.type === "channel" ? `channel:${t.channelId}` : `user:${t.userId}`;
+}
+
+function extOf(p: string): string {
+  return p.toLowerCase().split(".").pop() ?? "";
+}
+
+type MediaKind = "image" | "video" | "audio" | "file";
+function mediaKindForExt(ext: string): MediaKind {
+  if (["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext)) return "image";
+  if (["mp4", "mov", "m4v", "avi", "webm"].includes(ext)) return "video";
+  if (["mp3", "m4a", "wav", "aac", "ogg", "oga"].includes(ext)) return "audio";
+  return "file";
+}
+
+/**
+ * Compose a LINE WORKS content payload from a resolved local-file upload,
+ * branching by media kind. For video, LINE WORKS requires `previewImageUrl`
+ * when using URL form; the fileId form sends without a preview thumbnail.
+ * For audio, a duration is required — default 10s if unknown.
+ */
+function buildContentFromUpload(
+  kind: MediaKind,
+  uploaded: { fileId: string; fileName: string },
+): LineWorksOutboundMessage {
+  switch (kind) {
+    case "image":
+      return { type: "image", fileId: uploaded.fileId };
+    case "video":
+      return { type: "video", fileId: uploaded.fileId };
+    case "audio":
+      return { type: "audio", fileId: uploaded.fileId, duration: DEFAULT_AUDIO_DURATION_MS };
+    default:
+      return { type: "file", fileId: uploaded.fileId, fileName: uploaded.fileName };
+  }
+}
+
+function buildContentFromHttpsUrl(
+  kind: MediaKind,
+  url: string,
+): LineWorksOutboundMessage | undefined {
+  switch (kind) {
+    case "image":
+      return { type: "image", previewImageUrl: url, originalContentUrl: url };
+    case "video":
+      // previewImageUrl missing on a bare URL — the agent must supply one via
+      // channelData if it cares about the thumbnail. Without one, LINE WORKS
+      // rejects the video. Return undefined so the caller can log.
+      return undefined;
+    case "audio":
+      return { type: "audio", originalContentUrl: url, duration: DEFAULT_AUDIO_DURATION_MS };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Apply a quickReply to the last outbound message in a sequence. Mutates the
+ * array in place. `quickReply` is sent inside `content.quickReply` per
+ * LINE WORKS bot API.
+ */
+function attachQuickReplyToLast(
+  messages: LineWorksOutboundMessage[],
+  quickReply: LineWorksQuickReply,
+): void {
+  if (messages.length === 0) return;
+  const last = messages[messages.length - 1]!;
+  (last as unknown as { quickReply?: LineWorksQuickReply }).quickReply = quickReply;
 }
 
 export async function dispatchLineWorksInboundTurn(params: {
@@ -57,6 +135,8 @@ export async function dispatchLineWorksInboundTurn(params: {
     identityLinks: currentCfg.session?.identityLinks,
   });
 
+  // Download any attachments referenced by the inbound event so the agent
+  // sees the media directly in its context.
   const media: LineWorksInboundMedia[] = [...(params.msg.media ?? [])];
   for (const resourceId of params.msg.attachmentResourceIds ?? []) {
     try {
@@ -85,145 +165,155 @@ export async function dispatchLineWorksInboundTurn(params: {
   });
 
   const replyTarget = buildReplyTarget(params.msg);
+  const targetDesc = targetDescription(replyTarget);
+
+  // Delayed thinking-ack: if no reply payload arrives within N ms, send a
+  // short "still working" message so the user doesn't stare at silence.
+  // Defaults: 5s delay, "⋯". delayMs=0 disables.
+  const ackCfg = params.account.config.thinkingAck ?? {};
+  const ackDelayMs = ackCfg.delayMs ?? DEFAULT_ACK_DELAY_MS;
+  const ackText = ackCfg.text ?? DEFAULT_ACK_TEXT;
+  let firstReplyDelivered = false;
+  let ackSent = false;
+  let ackTimer: NodeJS.Timeout | undefined;
+  if (ackDelayMs > 0 && ackText) {
+    ackTimer = setTimeout(() => {
+      if (firstReplyDelivered) return;
+      ackSent = true;
+      sendText({ account: params.account, target: replyTarget, text: ackText }).catch((err) => {
+        params.log?.warn?.(`LINE WORKS: thinking-ack send failed: ${String(err)}`);
+      });
+    }, ackDelayMs);
+  }
 
   await rt.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
     ctx: msgCtx,
     cfg: currentCfg,
     dispatcherOptions: {
-      deliver: async (
-        payload: {
-          text?: string;
-          body?: string;
-          mediaUrl?: string;
-          mediaUrls?: string[];
-          channelData?: Record<string, unknown>;
-        },
-      ) => {
+      deliver: async (payload: {
+        text?: string;
+        body?: string;
+        mediaUrl?: string;
+        mediaUrls?: string[];
+        channelData?: Record<string, unknown>;
+      }) => {
+        if (!firstReplyDelivered) {
+          firstReplyDelivered = true;
+          if (ackTimer) clearTimeout(ackTimer);
+        }
+
         const rawText = payload.text ?? payload.body ?? "";
-        const mediaUrls: string[] = [
+        const rawMediaUrls: string[] = [
           ...(payload.mediaUrls ?? []),
           ...(payload.mediaUrl ? [payload.mediaUrl] : []),
         ].filter((u) => !!u && u.trim().length > 0);
 
-        // Pull flex messages from: (a) [[flex: ... ||| ...]] directives in
-        // text, and (b) channelData.lineworks.flexMessage(s) supplied by tools
-        // that produce structured output.
-        const directive = extractFlexDirectives(rawText);
-        const text = directive.residualText;
-        const flexMessages = [...directive.messages];
-        for (const err of directive.parseErrors) {
-          params.log?.warn?.(`LINE WORKS: ${err}`);
-        }
-        const lwChannelData = (payload.channelData?.lineworks ?? {}) as {
+        const {
+          flex: flexFromText,
+          locations: locationsFromText,
+          quickReply: quickReplyFromText,
+          residualText,
+          parseErrors,
+        } = extractDirectives(rawText);
+        for (const err of parseErrors) params.log?.warn?.(`LINE WORKS: ${err}`);
+        const text = residualText;
+
+        const lw = (payload.channelData?.lineworks ?? {}) as {
           flexMessage?: { altText: string; contents: Record<string, unknown> };
           flexMessages?: Array<{ altText: string; contents: Record<string, unknown> }>;
+          quickReply?: LineWorksQuickReply;
+          location?: {
+            title: string;
+            address: string;
+            latitude: number;
+            longitude: number;
+          };
         };
-        if (lwChannelData.flexMessage) {
-          flexMessages.push({
-            type: "flex",
-            altText: lwChannelData.flexMessage.altText,
-            contents: lwChannelData.flexMessage.contents,
-          });
-        }
-        for (const fm of lwChannelData.flexMessages ?? []) {
-          flexMessages.push({ type: "flex", altText: fm.altText, contents: fm.contents });
-        }
+        const flex = [...flexFromText];
+        if (lw.flexMessage) flex.push({ type: "flex", ...lw.flexMessage });
+        for (const fm of lw.flexMessages ?? []) flex.push({ type: "flex", ...fm });
+        const locations = [...locationsFromText];
+        if (lw.location) locations.push({ type: "location", ...lw.location });
+        const quickReply = quickReplyFromText ?? lw.quickReply;
 
-        if (!text && mediaUrls.length === 0 && flexMessages.length === 0) {
+        if (
+          !text &&
+          rawMediaUrls.length === 0 &&
+          flex.length === 0 &&
+          locations.length === 0
+        ) {
           params.log?.info?.(
             `LINE WORKS: deliver called with empty payload for ${params.msg.from} (skipping send)`,
           );
           return;
         }
 
-        const targetDesc =
-          replyTarget.type === "channel"
-            ? `channel:${replyTarget.channelId}`
-            : `user:${replyTarget.userId}`;
+        // Build an ordered sequence of LINE WORKS messages: media → text →
+        // flex → location. The last one gets the quickReply attached.
+        const outbound: LineWorksOutboundMessage[] = [];
 
-        // Send media first (if any), then any text caption — LINE WORKS
-        // shows them as separate messages in the same conversation.
-        for (const mediaUrl of mediaUrls) {
+        for (const mediaUrl of rawMediaUrls) {
           try {
             if (isHttpUrl(mediaUrl)) {
-              // Public URL path — LINE WORKS fetches it directly. Must be HTTPS.
               if (!mediaUrl.startsWith("https://")) {
                 throw new Error(
-                  `LINE WORKS requires https:// URLs for media (got: ${mediaUrl.slice(0, 80)})`,
+                  `LINE WORKS requires https:// URLs (got: ${mediaUrl.slice(0, 80)})`,
                 );
               }
-              await sendMessage({
-                account: params.account,
-                target: replyTarget,
-                message: {
-                  type: "image",
-                  previewImageUrl: mediaUrl,
-                  originalContentUrl: mediaUrl,
-                },
-              });
+              const kind = mediaKindForExt(
+                extOf(new URL(mediaUrl).pathname || mediaUrl),
+              );
+              const content = buildContentFromHttpsUrl(kind, mediaUrl);
+              if (!content) {
+                throw new Error(
+                  `LINE WORKS cannot send ${kind} as URL without required metadata (use channelData or upload a local file)`,
+                );
+              }
+              outbound.push(content);
             } else {
-              // Local file path — upload to LINE WORKS, then reference by fileId.
-              // Images go as image messages (inline preview); everything else as
-              // file messages (link). Driven by extension.
               const localPath = mediaUrl.replace(/^file:\/\//, "");
-              const ext = localPath.toLowerCase().split(".").pop() ?? "";
-              const isImageExt = ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext);
+              const kind = mediaKindForExt(extOf(localPath));
               const uploaded = await uploadLineWorksAttachment({
                 account: params.account,
                 filePath: localPath,
               });
-              await sendMessage({
-                account: params.account,
-                target: replyTarget,
-                message: isImageExt
-                  ? { type: "image", fileId: uploaded.fileId }
-                  : { type: "file", fileId: uploaded.fileId, fileName: uploaded.fileName },
-              });
+              outbound.push(buildContentFromUpload(kind, uploaded));
               params.log?.info?.(
-                `LINE WORKS: uploaded local file ${uploaded.fileName} (${isImageExt ? "image" : "file"}) -> fileId=${uploaded.fileId}`,
+                `LINE WORKS: uploaded ${uploaded.fileName} (${kind}) -> fileId=${uploaded.fileId}`,
               );
             }
-            params.log?.info?.(
-              `LINE WORKS: media delivered to ${targetDesc}: ${mediaUrl.slice(0, 120)}`,
-            );
           } catch (err) {
             params.log?.error?.(
-              `LINE WORKS: failed to deliver media to ${targetDesc} (${mediaUrl}): ${String(err)}`,
+              `LINE WORKS: failed to prepare media (${mediaUrl}): ${String(err)}`,
             );
           }
         }
 
-        if (text) {
-          const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+        if (text) outbound.push({ type: "text", text });
+        for (const fl of flex) outbound.push(fl);
+        for (const loc of locations) outbound.push(loc);
+
+        if (quickReply) attachQuickReplyToLast(outbound, quickReply);
+
+        for (const message of outbound) {
+          const label =
+            message.type === "text"
+              ? `text(${(message as { text: string }).text.length}c)`
+              : message.type;
           try {
-            await sendText({ account: params.account, target: replyTarget, text });
-            params.log?.info?.(
-              `LINE WORKS: reply delivered to ${targetDesc} (${text.length} chars): ${preview}`,
-            );
+            await sendMessage({ account: params.account, target: replyTarget, message });
+            params.log?.info?.(`LINE WORKS: ${label} delivered to ${targetDesc}`);
           } catch (err) {
             params.log?.error?.(
-              `LINE WORKS: failed to deliver reply to ${targetDesc}: ${String(err)}`,
+              `LINE WORKS: failed to deliver ${label} to ${targetDesc}: ${String(err)}`,
             );
           }
         }
 
-        // Flex messages go last — LINE WORKS displays them as a rich card below
-        // any preceding text/media. Directives can emit multiple.
-        for (const flex of flexMessages) {
-          try {
-            await sendMessage({
-              account: params.account,
-              target: replyTarget,
-              message: flex,
-            });
-            params.log?.info?.(
-              `LINE WORKS: flex message delivered to ${targetDesc} (altText: ${flex.altText.slice(0, 60)})`,
-            );
-          } catch (err) {
-            params.log?.error?.(
-              `LINE WORKS: failed to deliver flex message to ${targetDesc}: ${String(err)}`,
-            );
-          }
+        if (ackSent && outbound.length > 0) {
+          params.log?.info?.(
+            `LINE WORKS: real reply delivered after thinking-ack was sent (user saw both)`,
+          );
         }
       },
       onReplyStart: () => {
@@ -231,6 +321,12 @@ export async function dispatchLineWorksInboundTurn(params: {
       },
     },
   });
+
+  // Defensive: if the dispatcher exits without ever calling deliver, make
+  // sure we don't leak the ack timer.
+  if (ackTimer && !firstReplyDelivered) {
+    clearTimeout(ackTimer);
+  }
 
   return null;
 }
