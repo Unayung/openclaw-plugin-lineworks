@@ -108,10 +108,22 @@ export interface LineWorksOutboundFileMessage {
   fileName?: string;
 }
 
+/**
+ * LINE WORKS Flex message. Structurally identical to LINE consumer Flex —
+ * a bubble or carousel of bubbles with boxes, text, images, buttons, and URI
+ * actions. `altText` is what shows on notifications + fallback clients.
+ */
+export interface LineWorksOutboundFlexMessage {
+  type: "flex";
+  altText: string;
+  contents: Record<string, unknown>;
+}
+
 export type LineWorksOutboundMessage =
   | LineWorksOutboundTextMessage
   | LineWorksOutboundImageMessage
-  | LineWorksOutboundFileMessage;
+  | LineWorksOutboundFileMessage
+  | LineWorksOutboundFlexMessage;
 
 export type LineWorksTarget =
   | { type: "user"; userId: string }

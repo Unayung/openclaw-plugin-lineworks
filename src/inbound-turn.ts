@@ -3,6 +3,7 @@ import {
   isHttpUrl,
   uploadLineWorksAttachment,
 } from "./attachments.js";
+import { extractFlexDirectives } from "./flex-directive.js";
 import {
   buildLineWorksInboundContext,
   type LineWorksInboundMedia,
@@ -95,15 +96,40 @@ export async function dispatchLineWorksInboundTurn(params: {
           body?: string;
           mediaUrl?: string;
           mediaUrls?: string[];
+          channelData?: Record<string, unknown>;
         },
       ) => {
-        const text = payload.text ?? payload.body ?? "";
+        const rawText = payload.text ?? payload.body ?? "";
         const mediaUrls: string[] = [
           ...(payload.mediaUrls ?? []),
           ...(payload.mediaUrl ? [payload.mediaUrl] : []),
         ].filter((u) => !!u && u.trim().length > 0);
 
-        if (!text && mediaUrls.length === 0) {
+        // Pull flex messages from: (a) [[flex: ... ||| ...]] directives in
+        // text, and (b) channelData.lineworks.flexMessage(s) supplied by tools
+        // that produce structured output.
+        const directive = extractFlexDirectives(rawText);
+        const text = directive.residualText;
+        const flexMessages = [...directive.messages];
+        for (const err of directive.parseErrors) {
+          params.log?.warn?.(`LINE WORKS: ${err}`);
+        }
+        const lwChannelData = (payload.channelData?.lineworks ?? {}) as {
+          flexMessage?: { altText: string; contents: Record<string, unknown> };
+          flexMessages?: Array<{ altText: string; contents: Record<string, unknown> }>;
+        };
+        if (lwChannelData.flexMessage) {
+          flexMessages.push({
+            type: "flex",
+            altText: lwChannelData.flexMessage.altText,
+            contents: lwChannelData.flexMessage.contents,
+          });
+        }
+        for (const fm of lwChannelData.flexMessages ?? []) {
+          flexMessages.push({ type: "flex", altText: fm.altText, contents: fm.contents });
+        }
+
+        if (!text && mediaUrls.length === 0 && flexMessages.length === 0) {
           params.log?.info?.(
             `LINE WORKS: deliver called with empty payload for ${params.msg.from} (skipping send)`,
           );
@@ -137,7 +163,11 @@ export async function dispatchLineWorksInboundTurn(params: {
               });
             } else {
               // Local file path — upload to LINE WORKS, then reference by fileId.
+              // Images go as image messages (inline preview); everything else as
+              // file messages (link). Driven by extension.
               const localPath = mediaUrl.replace(/^file:\/\//, "");
+              const ext = localPath.toLowerCase().split(".").pop() ?? "";
+              const isImageExt = ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext);
               const uploaded = await uploadLineWorksAttachment({
                 account: params.account,
                 filePath: localPath,
@@ -145,10 +175,12 @@ export async function dispatchLineWorksInboundTurn(params: {
               await sendMessage({
                 account: params.account,
                 target: replyTarget,
-                message: { type: "image", fileId: uploaded.fileId },
+                message: isImageExt
+                  ? { type: "image", fileId: uploaded.fileId }
+                  : { type: "file", fileId: uploaded.fileId, fileName: uploaded.fileName },
               });
               params.log?.info?.(
-                `LINE WORKS: uploaded local file ${uploaded.fileName} -> fileId=${uploaded.fileId}`,
+                `LINE WORKS: uploaded local file ${uploaded.fileName} (${isImageExt ? "image" : "file"}) -> fileId=${uploaded.fileId}`,
               );
             }
             params.log?.info?.(
@@ -171,6 +203,25 @@ export async function dispatchLineWorksInboundTurn(params: {
           } catch (err) {
             params.log?.error?.(
               `LINE WORKS: failed to deliver reply to ${targetDesc}: ${String(err)}`,
+            );
+          }
+        }
+
+        // Flex messages go last — LINE WORKS displays them as a rich card below
+        // any preceding text/media. Directives can emit multiple.
+        for (const flex of flexMessages) {
+          try {
+            await sendMessage({
+              account: params.account,
+              target: replyTarget,
+              message: flex,
+            });
+            params.log?.info?.(
+              `LINE WORKS: flex message delivered to ${targetDesc} (altText: ${flex.altText.slice(0, 60)})`,
+            );
+          } catch (err) {
+            params.log?.error?.(
+              `LINE WORKS: failed to deliver flex message to ${targetDesc}: ${String(err)}`,
             );
           }
         }
