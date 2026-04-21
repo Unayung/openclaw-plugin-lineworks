@@ -62,12 +62,25 @@ export async function dispatchLineWorksInboundTurn(params: {
     dispatcherOptions: {
       deliver: async (payload: { text?: string; body?: string }) => {
         const text = payload.text ?? payload.body;
-        if (!text) return;
+        if (!text) {
+          params.log?.info?.(
+            `LINE WORKS: deliver called with empty text for ${params.msg.from} (skipping send)`,
+          );
+          return;
+        }
+        const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+        const targetDesc =
+          replyTarget.type === "channel"
+            ? `channel:${replyTarget.channelId}`
+            : `user:${replyTarget.userId}`;
         try {
           await sendText({ account: params.account, target: replyTarget, text });
+          params.log?.info?.(
+            `LINE WORKS: reply delivered to ${targetDesc} (${text.length} chars): ${preview}`,
+          );
         } catch (err) {
           params.log?.error?.(
-            `LINE WORKS: failed to deliver reply to ${params.msg.from}: ${String(err)}`,
+            `LINE WORKS: failed to deliver reply to ${targetDesc}: ${String(err)}`,
           );
         }
       },
