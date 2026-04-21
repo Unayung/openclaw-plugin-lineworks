@@ -47,6 +47,24 @@ function extOf(p: string): string {
   return p.toLowerCase().split(".").pop() ?? "";
 }
 
+// Mirror of src/send.ts:splitText used when we need to split before the last
+// chunk to carry a quickReply on the final message only.
+function splitTextForChunking(text: string, limit: number): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    let end = Math.min(cursor + limit, text.length);
+    if (end < text.length) {
+      const nl = text.lastIndexOf("\n", end);
+      if (nl > cursor + limit * 0.5) end = nl;
+    }
+    chunks.push(text.slice(cursor, end));
+    cursor = end;
+  }
+  return chunks;
+}
+
 type MediaKind = "image" | "video" | "audio" | "file";
 function mediaKindForExt(ext: string): MediaKind {
   if (["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext)) return "image";
@@ -180,6 +198,9 @@ export async function dispatchLineWorksInboundTurn(params: {
     ackTimer = setTimeout(() => {
       if (firstReplyDelivered) return;
       ackSent = true;
+      params.log?.info?.(
+        `LINE WORKS: thinking-ack fired for ${targetDesc} after ${ackDelayMs}ms (text: ${ackText})`,
+      );
       sendText({ account: params.account, target: replyTarget, text: ackText }).catch((err) => {
         params.log?.warn?.(`LINE WORKS: thinking-ack send failed: ${String(err)}`);
       });
@@ -301,7 +322,45 @@ export async function dispatchLineWorksInboundTurn(params: {
               ? `text(${(message as { text: string }).text.length}c)`
               : message.type;
           try {
-            await sendMessage({ account: params.account, target: replyTarget, message });
+            if (message.type === "text") {
+              // Route through sendText so the 2000-char chunker splits long
+              // replies on newline boundaries. LINE WORKS rejects content.text
+              // over ~2000 chars (EXCEEDED_LENGTH_LIMIT_OF_PARAM).
+              // NOTE: if this message has a quickReply attached, only the
+              // final chunk carries it — we send preceding chunks as-is and
+              // fold quickReply into the last via a single final sendMessage.
+              const qr = (message as { quickReply?: unknown }).quickReply;
+              if (qr) {
+                const CHUNK_LIMIT = 2000;
+                const text = (message as { text: string }).text;
+                if (text.length <= CHUNK_LIMIT) {
+                  await sendMessage({ account: params.account, target: replyTarget, message });
+                } else {
+                  const chunks = splitTextForChunking(text, CHUNK_LIMIT);
+                  for (let i = 0; i < chunks.length - 1; i++) {
+                    await sendText({
+                      account: params.account,
+                      target: replyTarget,
+                      text: chunks[i]!,
+                    });
+                  }
+                  const lastChunk = chunks[chunks.length - 1]!;
+                  await sendMessage({
+                    account: params.account,
+                    target: replyTarget,
+                    message: { type: "text", text: lastChunk, quickReply: qr } as never,
+                  });
+                }
+              } else {
+                await sendText({
+                  account: params.account,
+                  target: replyTarget,
+                  text: (message as { text: string }).text,
+                });
+              }
+            } else {
+              await sendMessage({ account: params.account, target: replyTarget, message });
+            }
             params.log?.info?.(`LINE WORKS: ${label} delivered to ${targetDesc}`);
           } catch (err) {
             params.log?.error?.(
