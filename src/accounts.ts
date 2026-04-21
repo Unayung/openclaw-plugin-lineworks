@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   DEFAULT_ACCOUNT_ID,
   listCombinedAccountIds,
@@ -42,9 +43,47 @@ function envOr(value: string | undefined, envKey: string): string {
   const env = process.env[envKey];
   if (!env) return "";
   if (envKey === "LINEWORKS_PRIVATE_KEY") {
-    return env.replace(/\\n/g, "\n");
+    return normalizePrivateKeyString(env);
   }
   return env.trim();
+}
+
+// Normalize a private key string from any source (inline JSON config, env var,
+// or file). Handles the common pitfalls: stray `\n` literal escapes, missing
+// trailing newline (OpenSSL accepts but jose sometimes doesn't), CRLF line
+// endings, wrapping whitespace.
+function normalizePrivateKeyString(raw: string): string {
+  let s = raw;
+  // Single-line env-var form with literal `\n` escapes
+  if (s.includes("\\n") && !s.includes("\n")) {
+    s = s.replace(/\\n/g, "\n");
+  }
+  // Normalize CRLF → LF
+  s = s.replace(/\r\n?/g, "\n");
+  // Strip outer whitespace but ensure a trailing newline (PEM canonical form).
+  s = s.trim();
+  if (!s.endsWith("\n")) s += "\n";
+  return s;
+}
+
+function resolvePrivateKey(merged: LineWorksAccountConfig): string {
+  const inline = merged.privateKey?.trim();
+  if (inline) return normalizePrivateKeyString(inline);
+
+  const file = merged.privateKeyFile?.trim();
+  if (file) {
+    try {
+      const contents = readFileSync(file, "utf8");
+      return normalizePrivateKeyString(contents);
+    } catch {
+      return "";
+    }
+  }
+
+  const env = process.env.LINEWORKS_PRIVATE_KEY;
+  if (env) return normalizePrivateKeyString(env);
+
+  return "";
 }
 
 export function listLineWorksAccountIds(cfg: OpenClawConfig): string[] {
@@ -83,7 +122,7 @@ export function resolveLineWorksAccount(
     clientId: envOr(merged.clientId, "LINEWORKS_CLIENT_ID"),
     clientSecret: envOr(merged.clientSecret, "LINEWORKS_CLIENT_SECRET"),
     serviceAccount: envOr(merged.serviceAccount, "LINEWORKS_SERVICE_ACCOUNT"),
-    privateKey: envOr(merged.privateKey, "LINEWORKS_PRIVATE_KEY"),
+    privateKey: resolvePrivateKey(merged),
     botId: envOr(merged.botId, "LINEWORKS_BOT_ID"),
     botSecret: envOr(merged.botSecret, "LINEWORKS_BOT_SECRET"),
     domainId: envOr(merged.domainId, "LINEWORKS_DOMAIN_ID") || undefined,

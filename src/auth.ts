@@ -19,7 +19,23 @@ function cacheKey(account: ResolvedLineWorksAccount): string {
 
 async function buildAssertion(account: ResolvedLineWorksAccount): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const key = await importPKCS8(account.privateKey, "RS256");
+  let key: Awaited<ReturnType<typeof importPKCS8>>;
+  try {
+    key = await importPKCS8(account.privateKey, "RS256");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const pem = account.privateKey ?? "";
+    const hint = !pem
+      ? "no private key configured (set channels.lineworks.privateKey, privateKeyFile, or LINEWORKS_PRIVATE_KEY)"
+      : !pem.includes("-----BEGIN") || !pem.includes("-----END")
+        ? "value does not look like a PEM (missing BEGIN/END markers)"
+        : !pem.includes("BEGIN PRIVATE KEY")
+          ? "PEM is not PKCS#8; convert with: openssl pkcs8 -topk8 -nocrypt -in src.pem -out pkcs8.pem"
+          : "PEM markers are present — likely the body was truncated or re-serialized. Try privateKeyFile pointing at an on-disk .pem";
+    throw new Error(
+      `LINE WORKS: unable to parse private key for account "${account.accountId}": ${msg} (${hint})`,
+    );
+  }
   return await new SignJWT({})
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(account.clientId)
