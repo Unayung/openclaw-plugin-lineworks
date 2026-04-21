@@ -97,8 +97,18 @@ function extractContent(raw: unknown): LineWorksInboundContent | undefined {
   const c = raw as Record<string, unknown>;
   const type = typeof c.type === "string" ? c.type : undefined;
   switch (type) {
-    case "text":
-      return typeof c.text === "string" ? { type: "text", text: c.text } : undefined;
+    case "text": {
+      if (typeof c.text !== "string") return undefined;
+      const rawMentions = Array.isArray(c.mentionees) ? c.mentionees : [];
+      const mentionees = rawMentions
+        .filter((m): m is Record<string, unknown> => !!m && typeof m === "object")
+        .map((m) => ({
+          accountId: typeof m.accountId === "string" ? m.accountId : undefined,
+          start: typeof m.start === "number" ? m.start : undefined,
+          end: typeof m.end === "number" ? m.end : undefined,
+        }));
+      return { type: "text", text: c.text, mentionees: mentionees.length ? mentionees : undefined };
+    }
     case "image": {
       // LINE WORKS payload uses `fileId`; keep `resourceId` as a fallback.
       const id = typeof c.fileId === "string" ? c.fileId

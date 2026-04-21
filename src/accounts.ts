@@ -129,6 +129,7 @@ export function resolveLineWorksAccount(
     webhookPath: merged.webhookPath?.trim() || DEFAULT_WEBHOOK_PATH,
     dmPolicy,
     groupPolicy,
+    groupRequireMention: merged.groupRequireMention ?? false,
     allowFrom: normalizeAllowFrom(merged.allowFrom),
     groupAllowFrom: normalizeAllowFrom(merged.groupAllowFrom),
     config: { ...channelCfg, ...merged },

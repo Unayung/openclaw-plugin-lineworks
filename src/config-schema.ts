@@ -28,6 +28,7 @@ const LineWorksCommonConfigSchema = z.object({
   groupPolicy: GroupPolicySchema.optional().default("allowlist"),
   webhookPath: z.string().optional(),
   thinkingAck: ThinkingAckSchema.optional(),
+  groupRequireMention: z.boolean().optional().default(false),
 });
 
 const LineWorksAccountConfigSchema = LineWorksCommonConfigSchema.strict();

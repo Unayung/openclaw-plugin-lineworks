@@ -17,6 +17,7 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     webhookPath: "/lineworks/webhook",
     dmPolicy: "pairing",
     groupPolicy: "allowlist",
+    groupRequireMention: false,
     allowFrom: [],
     groupAllowFrom: [],
     config: {},

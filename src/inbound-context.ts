@@ -29,7 +29,15 @@ export function buildLineWorksInboundContext<TContext>(params: {
   sessionKey: string;
 }): TContext {
   const { account, msg, sessionKey } = params;
-  const conversationRef = `${CHANNEL_ID}:${msg.conversationId}`;
+  // Preserve the user/channel discriminator in the conversation ref so the
+  // outbound adapter can route replies correctly when the agent calls the
+  // `message` tool explicitly (to = this ref, stripped only of the `lineworks:`
+  // channel prefix — `user:`/`channel:` survives into resolveSendContext).
+  const conversationRef =
+    msg.chatType === "group"
+      ? `${CHANNEL_ID}:channel:${msg.conversationId}`
+      : `${CHANNEL_ID}:user:${msg.conversationId}`;
+  const fromRef = `${CHANNEL_ID}:user:${msg.from}`;
   const mediaPayload = msg.media?.length
     ? buildAgentMediaPayload(msg.media.map((m) => ({ path: m.path, contentType: m.contentType })))
     : {};
@@ -37,7 +45,7 @@ export function buildLineWorksInboundContext<TContext>(params: {
     Body: msg.body,
     RawBody: msg.body,
     CommandBody: msg.body,
-    From: `${CHANNEL_ID}:${msg.from}`,
+    From: fromRef,
     To: conversationRef,
     SessionKey: sessionKey,
     AccountId: account.accountId,

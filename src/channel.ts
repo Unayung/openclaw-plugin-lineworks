@@ -22,6 +22,7 @@ import {
   registerLineWorksWebhookRoute,
   validateLineWorksStartup,
 } from "./gateway-runtime.js";
+import { uploadLineWorksAttachment } from "./attachments.js";
 import { sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
@@ -210,21 +211,21 @@ export function createLineWorksPlugin(): LineWorksPlugin {
         ...lineWorksConfigAdapter,
       },
       messaging: {
+        // Strip ONLY the `lineworks:` channel prefix. Preserve the
+        // `user:`/`channel:` discriminator so resolveSendContext in the
+        // outbound path can route to the correct endpoint.
         normalizeTarget: (target: string) => {
           const trimmed = target.trim();
           if (!trimmed) return undefined;
-          return trimmed
-            .replace(/^lineworks:(user|channel):/i, "")
-            .replace(/^lineworks:/i, "")
-            .trim();
+          return trimmed.replace(/^lineworks:/i, "").trim();
         },
         targetResolver: {
           looksLikeId: (id: string) => {
             const trimmed = id?.trim();
             if (!trimmed) return false;
-            return /^lineworks:/i.test(trimmed) || /^[\w-]{8,}$/.test(trimmed);
+            return /^lineworks:/i.test(trimmed) || /^(user|channel):/i.test(trimmed) || /^[\w-]{8,}$/.test(trimmed);
           },
-          hint: "<userId|channelId>",
+          hint: "user:<userId> | channel:<channelId>",
         },
       },
       directory: createEmptyChannelDirectoryAdapter(),
@@ -375,20 +376,39 @@ export function createLineWorksPlugin(): LineWorksPlugin {
       sendMedia: async ({ to, mediaUrl, accountId, cfg }: LineWorksSendContext) => {
         if (!mediaUrl) throw new Error("LINE WORKS: sendMedia requires mediaUrl");
         const { account, target } = resolveSendContext({ cfg, accountId, to });
-        if (!/^https:\/\//i.test(mediaUrl)) {
-          throw new Error(
-            `LINE WORKS outbound.sendMedia requires https:// URL; got ${mediaUrl.slice(0, 80)}. Use the deliver path for local files (auto-uploads).`,
-          );
+        // Branch on scheme: https fetches direct; local path (or file://)
+        // gets uploaded via LINE WORKS attachment API and sent by fileId.
+        // Extension drives the message type (image|video|audio|file).
+        if (/^https:\/\//i.test(mediaUrl)) {
+          await sendMessage({
+            account,
+            target,
+            message: {
+              type: "image",
+              previewImageUrl: mediaUrl,
+              originalContentUrl: mediaUrl,
+            },
+          });
+        } else {
+          const localPath = mediaUrl.replace(/^file:\/\//, "");
+          const ext = localPath.toLowerCase().split(".").pop() ?? "";
+          const isImage = ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext);
+          const isVideo = ["mp4", "mov", "m4v", "avi", "webm"].includes(ext);
+          const isAudio = ["mp3", "m4a", "wav", "aac", "ogg", "oga"].includes(ext);
+          const uploaded = await uploadLineWorksAttachment({ account, filePath: localPath });
+          const message = isImage
+            ? ({ type: "image" as const, fileId: uploaded.fileId })
+            : isVideo
+              ? ({ type: "video" as const, fileId: uploaded.fileId })
+              : isAudio
+                ? ({ type: "audio" as const, fileId: uploaded.fileId, duration: 10_000 })
+                : ({
+                    type: "file" as const,
+                    fileId: uploaded.fileId,
+                    fileName: uploaded.fileName,
+                  });
+          await sendMessage({ account, target, message });
         }
-        await sendMessage({
-          account,
-          target,
-          message: {
-            type: "image",
-            previewImageUrl: mediaUrl,
-            originalContentUrl: mediaUrl,
-          },
-        });
         return attachChannelToResult(LINEWORKS_CHANNEL_ID, {
           messageId: `lw-${Date.now()}`,
           chatId: to,

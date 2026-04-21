@@ -25,6 +25,8 @@ interface LineWorksAccountBaseConfig {
   groupPolicy?: LineWorksGroupPolicy;
   webhookPath?: string;
   thinkingAck?: LineWorksThinkingAckConfig;
+  /** When true, the bot only responds to group messages that @mention it. */
+  groupRequireMention?: boolean;
 }
 
 export interface LineWorksConfig extends LineWorksAccountBaseConfig {
@@ -55,6 +57,7 @@ export interface ResolvedLineWorksAccount {
   webhookPath: string;
   dmPolicy: LineWorksDmPolicy;
   groupPolicy: LineWorksGroupPolicy;
+  groupRequireMention: boolean;
   allowFrom: string[];
   groupAllowFrom: string[];
   config: LineWorksConfig & LineWorksAccountConfig;
@@ -82,8 +85,16 @@ export type LineWorksInboundSource =
   | { type: "user"; userId: string; domainId?: string }
   | { type: "channel"; channelId: string; userId?: string; domainId?: string };
 
+export interface LineWorksMentionee {
+  /** Account/user ID of the mentioned party, if extractable. */
+  accountId?: string;
+  /** Indices into the text where the @mention token starts and ends. */
+  start?: number;
+  end?: number;
+}
+
 export type LineWorksInboundContent =
-  | { type: "text"; text: string }
+  | { type: "text"; text: string; mentionees?: LineWorksMentionee[] }
   | { type: "image"; resourceId: string }
   | { type: "file"; resourceId: string; fileName?: string }
   | { type: "sticker"; packageId: string; stickerId: string }

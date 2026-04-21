@@ -70,6 +70,35 @@ function headerValue(header: string | string[] | undefined): string | undefined 
   return Array.isArray(header) ? header[0] : header;
 }
 
+/**
+ * Did the incoming message @mention the bot? LINE WORKS groups include a
+ * `mentionees` array on text content with each mention's accountId. We compare
+ * against the bot's own accountId (which for LINE WORKS bots looks like the
+ * botId surfaced in config). Falls back to a naive `@` token presence check
+ * so direct "@" mentions without structured metadata still work.
+ */
+function isMentioningBot(
+  content: {
+    type: string;
+    text?: string;
+    mentionees?: Array<{ accountId?: string }>;
+  },
+  account: ResolvedLineWorksAccount,
+): boolean {
+  if (content.type !== "text") return false;
+  const mentionees = content.mentionees ?? [];
+  for (const m of mentionees) {
+    if (m.accountId && (m.accountId === account.botId || m.accountId === account.serviceAccount)) {
+      return true;
+    }
+  }
+  // Soft-fallback: any @ token is treated as a likely mention. This keeps the
+  // bot responsive when LINE WORKS doesn't populate `mentionees` (e.g. the bot
+  // name was typed as plain text without the selector).
+  const text = content.text ?? "";
+  return /(^|\s)@[^\s]/.test(text);
+}
+
 export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps) {
   const { account, deliver, log } = deps;
   const inFlightKey = `lineworks:${account.accountId}`;
@@ -151,6 +180,24 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
         respondNoContent(res);
         return;
       }
+
+      // Group-chat mention gate: when groupRequireMention is enabled, skip
+      // dispatch for group messages that don't @mention the bot. DMs always
+      // dispatch regardless. Mention is detected via content.mentionees (the
+      // bot's accountId appearing) OR by the agent's display name token in
+      // the text body (best-effort).
+      if (
+        event.kind === "channel-message" &&
+        account.groupRequireMention &&
+        !isMentioningBot(content, account)
+      ) {
+        log?.info?.(
+          `lineworks: group message in ${event.source.type === "channel" ? event.source.channelId : "?"} not mentioning bot — skipping (groupRequireMention=true)`,
+        );
+        respondNoContent(res);
+        return;
+      }
+
       let body = "";
       let imageResourceId: string | undefined;
       let fileResourceId: string | undefined;
