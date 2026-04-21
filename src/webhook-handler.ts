@@ -121,6 +121,19 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
       }
 
       const event = parseInboundEvent(parsed);
+      // Debug: log every inbound event shape until the image subscription is confirmed working.
+      try {
+        const rawTop = (parsed ?? {}) as Record<string, unknown>;
+        const rawContent = (rawTop.content ?? {}) as Record<string, unknown>;
+        const rawType = typeof rawTop.type === "string" ? rawTop.type : "?";
+        const rawCT = typeof rawContent.type === "string" ? rawContent.type : "?";
+        const keys = Object.keys(rawContent).slice(0, 12).join(",");
+        log?.info?.(
+          `lineworks: inbound event type=${rawType} content.type=${rawCT} content.keys=[${keys}] parsedKind=${event?.kind ?? "none"} parsedContent=${event?.content?.type ?? "none"}`,
+        );
+      } catch {
+        /* ignore */
+      }
       if (!event) {
         respondNoContent(res);
         return;

@@ -99,18 +99,25 @@ function extractContent(raw: unknown): LineWorksInboundContent | undefined {
   switch (type) {
     case "text":
       return typeof c.text === "string" ? { type: "text", text: c.text } : undefined;
-    case "image":
-      return typeof c.resourceId === "string"
-        ? { type: "image", resourceId: c.resourceId }
+    case "image": {
+      // LINE WORKS payload uses `fileId`; keep `resourceId` as a fallback.
+      const id = typeof c.fileId === "string" ? c.fileId
+        : typeof c.resourceId === "string" ? c.resourceId
         : undefined;
-    case "file":
-      return typeof c.resourceId === "string"
+      return id ? { type: "image", resourceId: id } : undefined;
+    }
+    case "file": {
+      const id = typeof c.fileId === "string" ? c.fileId
+        : typeof c.resourceId === "string" ? c.resourceId
+        : undefined;
+      return id
         ? {
             type: "file",
-            resourceId: c.resourceId,
+            resourceId: id,
             fileName: typeof c.fileName === "string" ? c.fileName : undefined,
           }
         : undefined;
+    }
     case "sticker":
       return typeof c.packageId === "string" && typeof c.stickerId === "string"
         ? { type: "sticker", packageId: c.packageId, stickerId: c.stickerId }

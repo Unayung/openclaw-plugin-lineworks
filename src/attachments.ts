@@ -48,18 +48,38 @@ export async function downloadLineWorksAttachment(args: {
     account.botId,
   )}/attachments/${encodeURIComponent(resourceId)}`;
 
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { authorization: `${access.tokenType} ${access.token}` },
-    redirect: "follow",
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`LINE WORKS attachment fetch failed: ${res.status} ${text}`);
+  // The initial endpoint returns a 302 redirect to a signed CDN URL. Node's
+  // fetch strips `Authorization` on cross-origin redirects, so we follow the
+  // redirect manually and keep the Bearer token on the second hop (LINE WORKS
+  // expects it — confirmed via their docs + community samples).
+  const headers = { authorization: `${access.tokenType} ${access.token}` };
+  const initial = await fetch(url, { method: "GET", headers, redirect: "manual" });
+
+  let finalResponse: Response;
+  if (initial.status >= 300 && initial.status < 400) {
+    const location = initial.headers.get("location");
+    if (!location) {
+      throw new Error(
+        `LINE WORKS attachment fetch: ${initial.status} redirect without Location header`,
+      );
+    }
+    finalResponse = await fetch(location, { method: "GET", headers, redirect: "follow" });
+  } else {
+    finalResponse = initial;
   }
 
-  const contentType = res.headers.get("content-type") ?? "application/octet-stream";
-  const buf = Buffer.from(await res.arrayBuffer());
+  if (!finalResponse.ok) {
+    const text = await finalResponse.text().catch(() => "");
+    const scopeHint = access.scope
+      ? ` (token was granted scope: "${access.scope}")`
+      : " (no scope in token response — likely granted only the minimum your app permits)";
+    throw new Error(
+      `LINE WORKS attachment fetch failed: ${finalResponse.status} ${text}${scopeHint}`,
+    );
+  }
+
+  const contentType = finalResponse.headers.get("content-type") ?? "application/octet-stream";
+  const buf = Buffer.from(await finalResponse.arrayBuffer());
   if (buf.byteLength > maxBytes) {
     throw new Error(
       `LINE WORKS attachment ${resourceId} exceeds max size (${buf.byteLength} > ${maxBytes})`,

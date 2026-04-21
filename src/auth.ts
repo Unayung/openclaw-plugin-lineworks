@@ -2,7 +2,7 @@ import { SignJWT, importPKCS8 } from "jose";
 import type { LineWorksAccessToken, ResolvedLineWorksAccount } from "./types.js";
 
 const LINEWORKS_AUTH_URL = "https://auth.worksmobile.com/oauth2/v2.0/token";
-const TOKEN_SCOPE = "bot";
+const TOKEN_SCOPE = "bot bot.read";
 const JWT_TTL_SECONDS = 60 * 60;
 const REFRESH_SKEW_MS = 60_000;
 

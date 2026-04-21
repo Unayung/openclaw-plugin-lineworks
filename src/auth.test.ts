@@ -71,7 +71,7 @@ describe("getAccessToken", () => {
     expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
     expect(params.get("client_id")).toBe("client-abc");
     expect(params.get("client_secret")).toBe("secret-xyz");
-    expect(params.get("scope")).toBe("bot");
+    expect(params.get("scope")).toBe("bot bot.read");
 
     const assertion = params.get("assertion");
     expect(assertion).toBeTruthy();
