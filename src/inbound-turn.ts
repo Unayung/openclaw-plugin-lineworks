@@ -2,6 +2,7 @@ import {
   downloadHttpsToTempFile,
   downloadLineWorksAttachment,
   isHttpUrl,
+  mediaKindForContentType,
   uploadLineWorksAttachment,
 } from "./attachments.js";
 import { chunkText, LINEWORKS_TEXT_CHUNK_LIMIT } from "./chunk-text.js";
@@ -266,27 +267,30 @@ export async function dispatchLineWorksInboundTurn(params: {
                   `LINE WORKS requires https:// URLs (got: ${mediaUrl.slice(0, 80)})`,
                 );
               }
-              const urlKind = mediaKindForExt(extOf(new URL(mediaUrl).pathname || mediaUrl));
-              // Images can be sent by URL directly (LINE WORKS fetches it).
-              // Video/audio/file can't — LINE WORKS requires fileId or a
-              // preview thumbnail we don't have. Download to temp, then
-              // upload via the attachment API and send as {type, fileId}.
-              if (urlKind === "image") {
-                const content = buildContentFromHttpsUrl(urlKind, mediaUrl);
+              const urlExtKind = mediaKindForExt(extOf(new URL(mediaUrl).pathname || mediaUrl));
+              // Images with a recognized extension can be sent by URL direct
+              // (LINE WORKS fetches it). Everything else — video, audio, file,
+              // or an extension-less URL — gets downloaded + uploaded. The
+              // message kind is re-derived from the actual Content-Type when
+              // the URL extension was "file" / ambiguous.
+              if (urlExtKind === "image") {
+                const content = buildContentFromHttpsUrl(urlExtKind, mediaUrl);
                 if (content) {
                   outbound.push(content);
                   break;
                 }
               }
               const dl = await downloadHttpsToTempFile(mediaUrl);
+              const kind =
+                urlExtKind === "file" ? mediaKindForContentType(dl.contentType) : urlExtKind;
               const uploaded = await uploadLineWorksAttachment({
                 account: params.account,
                 filePath: dl.path,
                 fileName: dl.fileName,
               });
-              outbound.push(buildContentFromUpload(urlKind, uploaded));
+              outbound.push(buildContentFromUpload(kind, uploaded));
               params.log?.info?.(
-                `LINE WORKS: fetched ${mediaUrl} (${dl.size}B) → uploaded as ${urlKind} fileId=${uploaded.fileId}`,
+                `LINE WORKS: fetched ${mediaUrl} (${dl.size}B, ${dl.contentType}) → uploaded as ${kind} fileId=${uploaded.fileId}`,
               );
             } else {
               const localPath = mediaUrl.replace(/^file:\/\//, "");

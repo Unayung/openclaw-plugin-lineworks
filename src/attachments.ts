@@ -168,6 +168,22 @@ export function isHttpUrl(s: string): boolean {
 }
 
 /**
+ * Map an HTTP Content-Type to the LINE WORKS message kind this plugin uses.
+ * Used as a fallback when an HTTPS URL has no (recognizable) extension on its
+ * path — e.g. `https://picsum.photos/id/237/400/300` returns a JPEG but the
+ * path doesn't end in `.jpg`, so we'd otherwise misfile it as a generic file.
+ */
+export function mediaKindForContentType(
+  ct: string,
+): "image" | "video" | "audio" | "file" {
+  const base = (ct.split(";")[0] ?? "").trim().toLowerCase();
+  if (base.startsWith("image/")) return "image";
+  if (base.startsWith("video/")) return "video";
+  if (base.startsWith("audio/")) return "audio";
+  return "file";
+}
+
+/**
  * Download an HTTPS URL to a temp file and return the local path. Used when
  * outbound media is referenced by URL but LINE WORKS needs an uploaded fileId
  * (e.g., video, audio, and generic file attachments that LINE WORKS cannot

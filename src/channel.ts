@@ -22,7 +22,11 @@ import {
   registerLineWorksWebhookRoute,
   validateLineWorksStartup,
 } from "./gateway-runtime.js";
-import { downloadHttpsToTempFile, uploadLineWorksAttachment } from "./attachments.js";
+import {
+  downloadHttpsToTempFile,
+  mediaKindForContentType,
+  uploadLineWorksAttachment,
+} from "./attachments.js";
 import { sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
@@ -377,19 +381,26 @@ export function createLineWorksPlugin(): LineWorksPlugin {
         if (!mediaUrl) throw new Error("LINE WORKS: sendMedia requires mediaUrl");
         const { account, target } = resolveSendContext({ cfg, accountId, to });
 
-        // Extension (from URL path or local path) drives message type.
+        // Kind from URL / local path extension. Extension-less URLs
+        // (e.g. https://picsum.photos/id/237/400/300) land on "file" here
+        // and we correct below using the actual Content-Type after download.
         const pathForExt = /^https?:\/\//i.test(mediaUrl)
           ? (new URL(mediaUrl).pathname || "")
           : mediaUrl.replace(/^file:\/\//, "");
         const ext = pathForExt.toLowerCase().split(".").pop() ?? "";
-        const isImage = ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext);
-        const isVideo = ["mp4", "mov", "m4v", "avi", "webm"].includes(ext);
-        const isAudio = ["mp3", "m4a", "wav", "aac", "ogg", "oga"].includes(ext);
+        const extKind: "image" | "video" | "audio" | "file" =
+          ["jpg", "jpeg", "png", "gif", "webp", "heic"].includes(ext)
+            ? "image"
+            : ["mp4", "mov", "m4v", "avi", "webm"].includes(ext)
+              ? "video"
+              : ["mp3", "m4a", "wav", "aac", "ogg", "oga"].includes(ext)
+                ? "audio"
+                : "file";
 
-        // HTTPS image: send URL directly (LINE WORKS fetches). Anything else —
-        // video, audio, file, or HTTP (non-TLS) — must be uploaded first: LINE
-        // WORKS either needs a fileId (video/audio/file) or refuses http://.
-        if (isImage && /^https:\/\//i.test(mediaUrl)) {
+        // HTTPS image with a recognized image extension: send URL directly
+        // (LINE WORKS fetches). Everything else — video, audio, file,
+        // extension-less URL, or non-TLS http:// — gets downloaded + uploaded.
+        if (extKind === "image" && /^https:\/\//i.test(mediaUrl)) {
           await sendMessage({
             account,
             target,
@@ -402,25 +413,30 @@ export function createLineWorksPlugin(): LineWorksPlugin {
         } else {
           let filePath: string;
           let fileName: string | undefined;
+          let kind = extKind;
           if (/^https?:\/\//i.test(mediaUrl)) {
             const dl = await downloadHttpsToTempFile(mediaUrl);
             filePath = dl.path;
             fileName = dl.fileName;
+            // Prefer the server's Content-Type when the URL path gave us no
+            // useful extension — this rescues picsum-style image URLs.
+            if (kind === "file") kind = mediaKindForContentType(dl.contentType);
           } else {
             filePath = mediaUrl.replace(/^file:\/\//, "");
           }
           const uploaded = await uploadLineWorksAttachment({ account, filePath, fileName });
-          const message = isImage
-            ? ({ type: "image" as const, fileId: uploaded.fileId })
-            : isVideo
-              ? ({ type: "video" as const, fileId: uploaded.fileId })
-              : isAudio
-                ? ({ type: "audio" as const, fileId: uploaded.fileId, duration: 10_000 })
-                : ({
-                    type: "file" as const,
-                    fileId: uploaded.fileId,
-                    fileName: uploaded.fileName,
-                  });
+          const message =
+            kind === "image"
+              ? ({ type: "image" as const, fileId: uploaded.fileId })
+              : kind === "video"
+                ? ({ type: "video" as const, fileId: uploaded.fileId })
+                : kind === "audio"
+                  ? ({ type: "audio" as const, fileId: uploaded.fileId, duration: 10_000 })
+                  : ({
+                      type: "file" as const,
+                      fileId: uploaded.fileId,
+                      fileName: uploaded.fileName,
+                    });
           await sendMessage({ account, target, message });
         }
         return attachChannelToResult(LINEWORKS_CHANNEL_ID, {
