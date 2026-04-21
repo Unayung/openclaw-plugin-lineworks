@@ -1,3 +1,9 @@
-// Placeholder. Replace with defineBundledChannelSetupEntry(...) once the setup
-// wizard is implemented. See extensions/line/setup-entry.ts for a reference.
-export {};
+import { defineBundledChannelSetupEntry } from "openclaw/plugin-sdk/channel-entry-contract";
+
+export default defineBundledChannelSetupEntry({
+  importMetaUrl: import.meta.url,
+  plugin: {
+    specifier: "./setup-api.js",
+    exportName: "lineWorksSetupPlugin",
+  },
+});

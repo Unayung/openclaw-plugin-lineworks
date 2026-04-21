@@ -14,6 +14,11 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     privateKey: privateKeyPem,
     botId: "bot-123",
     botSecret: "bot-secret",
+    webhookPath: "/lineworks/webhook",
+    dmPolicy: "pairing",
+    groupPolicy: "allowlist",
+    allowFrom: [],
+    groupAllowFrom: [],
     config: {},
   };
 }

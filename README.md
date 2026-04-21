@@ -3,9 +3,9 @@
 Third-party OpenClaw channel plugin for **LINE WORKS** (Works Mobile) — LINE's
 enterprise collaboration platform. Separate product and API from consumer LINE.
 
-**Status:** proof-of-concept scaffold. The primitives (JWT auth, webhook
-parsing + signature verification, outbound sender, config schema) are shipped.
-The full `ChannelPlugin` adapter wiring is stubbed — see `src/channel.ts`.
+**Status:** first runnable PoC. Primitives, full `ChannelPlugin` wiring, setup
+wizard, webhook ingress, and reply-pipeline dispatch are all in place. Text-only
+outbound; rich messages deferred.
 
 ## What's implemented
 
@@ -14,11 +14,14 @@ The full `ChannelPlugin` adapter wiring is stubbed — see `src/channel.ts`.
 | `src/auth.ts` | Working | JWT service-account flow (API 2.1); single-flight refresh; per-account token cache |
 | `src/webhook.ts` | Working | HMAC-SHA256 verify with timing-safe compare; parser for user/channel/postback/member events |
 | `src/send.ts` | Working | Text + image outbound; 2000-char text chunking |
-| `src/accounts.ts` | Working | Multi-account resolver |
-| `src/config-schema.ts` | Working | Zod schema, DM + group routing |
-| `src/types.ts` | Working | |
-| `src/channel.ts` | Stub | ChannelPlugin wiring; see file for TODO list |
-| `setup-entry.ts`, `setup-api.ts` | Stubs | |
+| `src/accounts.ts` | Working | Multi-account resolver + env-var fallback |
+| `src/config-schema.ts` | Working | Zod schema; DM + group policies |
+| `src/webhook-handler.ts` | Working | HTTP handler using openclaw webhook-ingress primitives |
+| `src/gateway-runtime.ts` | Working | `registerPluginHttpRoute` for `/lineworks/webhook` |
+| `src/inbound-turn.ts` | Working | Reply-pipeline dispatch via `PluginRuntime` |
+| `src/setup-surface.ts` | Working | Setup adapter + wizard (bot secret prompt) |
+| `src/channel.ts` | Working | `createChatChannelPlugin` — meta/capabilities/config/messaging/gateway/outbound/security/pairing |
+| `index.ts`, `setup-entry.ts` | Working | `defineBundledChannelEntry` / setup entry |
 
 ## Spec verification
 
@@ -94,15 +97,67 @@ ngrok http 8787
 
 If `parseInboundEvent` logs `{ kind: "unknown" }` on a real event, the LINE WORKS event-type string is something other than what the parser currently maps — grab the raw `type` from the log and add it to `src/webhook.ts`.
 
-### Install into openclaw (blocked — ChannelPlugin stub)
+### Install into openclaw (end-to-end with the agent)
 
-Not runnable yet. Once `src/channel.ts` is wired against a pinned openclaw host version:
+Assumes an existing openclaw deployment reachable at `https://<gateway-host>` (VPS + reverse proxy, Tailscale Funnel, Cloudflare Tunnel, etc.). See [docs/gateway/remote.md](https://docs.openclaw.ai/gateway/remote) for deployment patterns.
 
 ```bash
-openclaw plugin install openclaw-plugin-lineworks
-# or, for local dev:
-openclaw plugin install /path/to/openclaw-plugin-lineworks
+# from a local path during dev:
+openclaw plugins install /absolute/path/to/openclaw-plugin-lineworks
+
+# or (once published):
+openclaw plugins install openclaw-plugin-lineworks
 ```
+
+Run the setup wizard:
+
+```bash
+openclaw channels setup lineworks
+```
+
+It will prompt for the bot secret (used for webhook signature verification) and enable the channel. Everything else (JWT client id, service account, private key, bot id) is picked up from env vars:
+
+```
+LINEWORKS_CLIENT_ID
+LINEWORKS_CLIENT_SECRET
+LINEWORKS_SERVICE_ACCOUNT
+LINEWORKS_PRIVATE_KEY            # PKCS#8 PEM; newlines as \n if single-line
+LINEWORKS_BOT_ID
+LINEWORKS_BOT_SECRET             # fallback if not set via wizard
+LINEWORKS_DOMAIN_ID              # optional
+```
+
+Or in `~/.openclaw/config.toml`:
+
+```toml
+[channels.lineworks]
+enabled = true
+clientId = "..."
+clientSecret = "..."
+serviceAccount = "..."
+privateKey = """-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----"""
+botId = "..."
+botSecret = "..."
+dmPolicy = "pairing"
+# webhookPath = "/lineworks/webhook"  # default
+```
+
+Finally, in the LINE WORKS Developer Console, set the bot's **Callback URL** to:
+
+```
+https://<your-gateway-host>/lineworks/webhook
+```
+
+DM your bot. The openclaw agent should reply.
+
+### Troubleshooting
+
+- `401 Invalid signature` in gateway logs → bot secret in openclaw config doesn't match the one in the Developer Console.
+- `405 Method not allowed` on `/lineworks/webhook` → LINE WORKS is probing with GET; that's expected. Only POST is accepted.
+- Nothing happens on inbound → check `openclaw channels status lineworks` for startup issues (missing credentials, disabled account). Check that `channels.lineworks.dmPolicy` isn't `"disabled"`.
+- 401 from `www.worksapis.com` on outbound → JWT token expired or scope missing; `src/auth.ts` auto-refreshes on expiry, but verify the service account has `bot` scope.
 
 ## Configuration
 

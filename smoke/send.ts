@@ -8,7 +8,7 @@
  *
  * Requires LINEWORKS_* env vars from .env.example.
  */
-import { resolveLineWorksAccount } from "../src/accounts.js";
+import { hasLineWorksCredentials, resolveLineWorksAccount } from "../src/accounts.js";
 import { sendText } from "../src/send.js";
 import type { LineWorksConfig } from "../src/types.js";
 
@@ -32,7 +32,7 @@ if (!["user", "channel"].includes(kindArg ?? "") || !idArg || !text) {
   process.exit(2);
 }
 
-const config: LineWorksConfig = {
+const lineworksConfig: LineWorksConfig = {
   clientId: env("LINEWORKS_CLIENT_ID"),
   clientSecret: env("LINEWORKS_CLIENT_SECRET"),
   serviceAccount: env("LINEWORKS_SERVICE_ACCOUNT"),
@@ -42,8 +42,8 @@ const config: LineWorksConfig = {
   domainId: envOpt("LINEWORKS_DOMAIN_ID"),
 };
 
-const account = resolveLineWorksAccount({ config });
-if (!account) {
+const account = resolveLineWorksAccount({ channels: { lineworks: lineworksConfig } });
+if (!hasLineWorksCredentials(account)) {
   console.error("Could not resolve LINE WORKS account from env; check required vars are set.");
   process.exit(1);
 }

@@ -44,6 +44,11 @@ export interface ResolvedLineWorksAccount {
   botId: string;
   botSecret: string;
   domainId?: string;
+  webhookPath: string;
+  dmPolicy: LineWorksDmPolicy;
+  groupPolicy: LineWorksGroupPolicy;
+  allowFrom: string[];
+  groupAllowFrom: string[];
   config: LineWorksConfig & LineWorksAccountConfig;
 }
 

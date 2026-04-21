@@ -15,7 +15,7 @@
  *     messages back via the LINE WORKS send API.
  */
 import express from "express";
-import { resolveLineWorksAccount } from "../src/accounts.js";
+import { hasLineWorksCredentials, resolveLineWorksAccount } from "../src/accounts.js";
 import { sendText } from "../src/send.js";
 import type { LineWorksConfig } from "../src/types.js";
 import {
@@ -33,7 +33,7 @@ function envOpt(name: string): string | undefined {
   return process.env[name] || undefined;
 }
 
-const config: LineWorksConfig = {
+const lineworksConfig: LineWorksConfig = {
   clientId: env("LINEWORKS_CLIENT_ID"),
   clientSecret: env("LINEWORKS_CLIENT_SECRET"),
   serviceAccount: env("LINEWORKS_SERVICE_ACCOUNT"),
@@ -42,8 +42,8 @@ const config: LineWorksConfig = {
   botSecret: env("LINEWORKS_BOT_SECRET"),
   domainId: envOpt("LINEWORKS_DOMAIN_ID"),
 };
-const account = resolveLineWorksAccount({ config });
-if (!account) {
+const account = resolveLineWorksAccount({ channels: { lineworks: lineworksConfig } });
+if (!hasLineWorksCredentials(account)) {
   console.error("Could not resolve LINE WORKS account from env");
   process.exit(1);
 }
