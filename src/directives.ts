@@ -15,6 +15,17 @@
  *       - `label > https://url.example` (opens the URL)
  *       - `label > data:<postback payload>` (returns postback event)
  *
+ *   [[mail_send:
+ *   to: a@b.com, c@b.com
+ *   cc: d@b.com
+ *   subject: Hello
+ *   body:
+ *   Free-form body, multi-line, runs to the closing ]].
+ *   ]]
+ *     Send a mail via LINE WORKS Mail API. Requires `mail` scope + the bot
+ *     identity having send permission for the `from` mailbox. Body starts on
+ *     the line after `body:` and continues to the close brackets.
+ *
  * All directives may appear anywhere in the text; the surrounding text is sent
  * as a separate text message. Multiple flex/location directives are allowed;
  * only the first quick_replies directive is honored (LINE WORKS attaches one
@@ -30,23 +41,41 @@ import type {
 const FLEX_RE = /\[\[flex:\s*([\s\S]*?)\]\]/g;
 const LOCATION_RE = /\[\[location:\s*([\s\S]*?)\]\]/g;
 const QUICK_RE = /\[\[quick_replies:\s*([\s\S]*?)\]\]/g;
+const MAIL_RE = /\[\[mail_send:\s*([\s\S]*?)\]\]/g;
 const FLEX_SEP = "|||";
+
+export interface MailSendDirective {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
+}
 
 export interface ExtractedDirectives {
   flex: LineWorksOutboundFlexMessage[];
   locations: LineWorksOutboundLocationMessage[];
   quickReply: LineWorksQuickReply | undefined;
+  mailSends: MailSendDirective[];
   residualText: string;
   parseErrors: string[];
 }
 
 export function extractDirectives(text: string): ExtractedDirectives {
   if (!text) {
-    return { flex: [], locations: [], quickReply: undefined, residualText: text, parseErrors: [] };
+    return {
+      flex: [],
+      locations: [],
+      quickReply: undefined,
+      mailSends: [],
+      residualText: text,
+      parseErrors: [],
+    };
   }
 
   const flex: LineWorksOutboundFlexMessage[] = [];
   const locations: LineWorksOutboundLocationMessage[] = [];
+  const mailSends: MailSendDirective[] = [];
   const parseErrors: string[] = [];
   let quickReply: LineWorksQuickReply | undefined;
 
@@ -73,12 +102,19 @@ export function extractDirectives(text: string): ExtractedDirectives {
     return "";
   });
 
+  residualText = residualText.replace(MAIL_RE, (_m, inner: string) => {
+    const parsed = parseMailSend(inner);
+    if (parsed.ok) mailSends.push(parsed.directive);
+    else parseErrors.push(parsed.reason);
+    return "";
+  });
+
   residualText = residualText
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  return { flex, locations, quickReply, residualText, parseErrors };
+  return { flex, locations, quickReply, mailSends, residualText, parseErrors };
 }
 
 // ---- parsers -------------------------------------------------------------
@@ -152,6 +188,65 @@ function parseLocation(
       address: address.slice(0, 100),
       latitude,
       longitude,
+    },
+  };
+}
+
+function splitEmails(raw: string): string[] {
+  return raw
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function parseMailSend(
+  inner: string,
+): { ok: true; directive: MailSendDirective } | { ok: false; reason: string } {
+  // `body:` is the boundary — everything after (to the end of the directive)
+  // is the body, verbatim. Everything before is parsed line-by-line as
+  // `key: value`.
+  const bodyMarker = /(^|\n)\s*body\s*:/i.exec(inner);
+  let headerPart: string;
+  let body = "";
+  if (bodyMarker) {
+    headerPart = inner.slice(0, bodyMarker.index);
+    body = inner.slice(bodyMarker.index + bodyMarker[0].length).replace(/^\n/, "").trim();
+  } else {
+    headerPart = inner;
+  }
+
+  let to: string[] = [];
+  let cc: string[] = [];
+  let bcc: string[] = [];
+  let subject = "";
+  for (const line of headerPart.split(/\r?\n/)) {
+    const m = /^\s*(to|cc|bcc|subject)\s*:\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const key = m[1]!.toLowerCase();
+    const val = (m[2] ?? "").trim();
+    if (key === "to") to = splitEmails(val);
+    else if (key === "cc") cc = splitEmails(val);
+    else if (key === "bcc") bcc = splitEmails(val);
+    else if (key === "subject") subject = val;
+  }
+
+  if (to.length === 0) {
+    return { ok: false, reason: "mail_send directive missing `to:` recipients" };
+  }
+  if (!subject) {
+    return { ok: false, reason: "mail_send directive missing `subject:`" };
+  }
+  if (!body) {
+    return { ok: false, reason: "mail_send directive missing `body:`" };
+  }
+  return {
+    ok: true,
+    directive: {
+      to,
+      cc: cc.length ? cc : undefined,
+      bcc: bcc.length ? bcc : undefined,
+      subject,
+      body,
     },
   };
 }

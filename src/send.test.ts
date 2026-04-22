@@ -22,6 +22,15 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     botMentionHandle: undefined,
     allowFrom: [],
     groupAllowFrom: [],
+    extraScopes: [],
+    senderProfileEnrichment: true,
+    mailPreFetchEnabled: false,
+    mailPreFetchCount: 10,
+    publicBaseUrl: undefined,
+    oauthEnabled: false,
+    oauthStartPath: "/oauth/lineworks/start",
+    oauthCallbackPath: "/oauth/lineworks/callback",
+    oauthScopes: "mail,mail.read",
     config: {},
   };
 }

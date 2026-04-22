@@ -21,6 +21,15 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     botMentionHandle: undefined,
     allowFrom: [],
     groupAllowFrom: [],
+    extraScopes: [],
+    senderProfileEnrichment: true,
+    mailPreFetchEnabled: false,
+    mailPreFetchCount: 10,
+    publicBaseUrl: undefined,
+    oauthEnabled: false,
+    oauthStartPath: "/oauth/lineworks/start",
+    oauthCallbackPath: "/oauth/lineworks/callback",
+    oauthScopes: "mail,mail.read",
     config: {},
   };
 }
@@ -73,7 +82,7 @@ describe("getAccessToken", () => {
     expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
     expect(params.get("client_id")).toBe("client-abc");
     expect(params.get("client_secret")).toBe("secret-xyz");
-    expect(params.get("scope")).toBe("bot bot.read");
+    expect(params.get("scope")).toBe("bot bot.read user.profile.read");
 
     const assertion = params.get("assertion");
     expect(assertion).toBeTruthy();

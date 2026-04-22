@@ -34,6 +34,73 @@ interface LineWorksAccountBaseConfig {
    * (the PoC default, noisy in busy groups).
    */
   botMentionHandle?: string;
+  /**
+   * Extra OAuth scopes to request when minting the bot's service-account
+   * access token, on top of the baseline `bot bot.read user.profile.read`.
+   * Populate with the scopes you've granted admin consent for in Developer
+   * Console — e.g. `["mail", "mail.read"]` to enable mail send, or
+   * `["calendar.read"]` for free/busy lookups. Silently ignored by LINE
+   * WORKS if the app doesn't actually have the scope granted.
+   */
+  extraScopes?: string[];
+  /**
+   * Enrich inbound context with the sender's profile (email, display name,
+   * department) via the Directory API. Requires `user.profile.read` or
+   * `user.email.read` scope on the app. Defaults to true.
+   */
+  senderProfileEnrichment?: boolean;
+  /**
+   * When true and the inbound message matches a mail-check intent (e.g.
+   * "查看我的信箱", "check my mail"), pre-fetch the sender's recent mail via
+   * `listRecentMail` and inject it into the agent context as `RecentMail`
+   * so the model can summarize without needing a tool loop.
+   *
+   * Requires `mail.read` scope (add to `extraScopes`) AND
+   * `senderProfileEnrichment` (to know whose mailbox to read). Defaults to
+   * false — opt-in because it silently hits the Mail API on every message.
+   */
+  mailPreFetch?: {
+    /** Turn the feature on. Default false. */
+    enabled?: boolean;
+    /** How many recent mails to pull. Default 10. Cap 50. */
+    count?: number;
+  };
+  /**
+   * Public HTTPS base URL at which this gateway is reachable from the
+   * internet. Required when `oauth.enabled=true` so the plugin can build
+   * redirect URIs LINE WORKS will accept. For ngrok setups, this rotates
+   * when ngrok restarts — keep it in sync with Developer Console →
+   * App → Redirect URIs.
+   *
+   * Example: "https://racco-bot.ngrok.app"
+   */
+  publicBaseUrl?: string;
+  /**
+   * Per-user OAuth 2.0 flow settings. Needed for API scopes that LINE WORKS
+   * refuses to grant to service-account tokens (mail, task, file, form,
+   * group.folder, group.note). When disabled, those features fall back to
+   * "grant link" prompts.
+   */
+  oauth?: {
+    /** Turn OAuth features on. Default false. */
+    enabled?: boolean;
+    /**
+     * Path for the start endpoint (user-facing link destination). Default
+     * `/oauth/lineworks/start`.
+     */
+    startPath?: string;
+    /**
+     * Path for the callback endpoint (registered in Developer Console →
+     * Redirect URIs). Default `/oauth/lineworks/callback`.
+     */
+    callbackPath?: string;
+    /**
+     * Comma-separated OAuth scopes to request at the consent screen.
+     * Default covers all known user-scoped features:
+     * `mail,mail.read,task,task.read,file,file.read,calendar,calendar.read,user.profile.read,user.email.read`
+     */
+    scopes?: string;
+  };
 }
 
 export interface LineWorksConfig extends LineWorksAccountBaseConfig {
@@ -68,6 +135,15 @@ export interface ResolvedLineWorksAccount {
   botMentionHandle: string | undefined;
   allowFrom: string[];
   groupAllowFrom: string[];
+  extraScopes: string[];
+  senderProfileEnrichment: boolean;
+  mailPreFetchEnabled: boolean;
+  mailPreFetchCount: number;
+  publicBaseUrl: string | undefined;
+  oauthEnabled: boolean;
+  oauthStartPath: string;
+  oauthCallbackPath: string;
+  oauthScopes: string;
   config: LineWorksConfig & LineWorksAccountConfig;
 }
 
@@ -162,12 +238,14 @@ export type LineWorksOutboundVideoMessage =
 export interface LineWorksOutboundAudioUrlMessage {
   type: "audio";
   originalContentUrl: string;
-  duration: number;
+  /** Unused — LINE WORKS audio spec doesn't accept a `duration` field.
+   * Kept optional in the type for back-compat but not emitted. */
+  duration?: number;
 }
 export interface LineWorksOutboundAudioFileMessage {
   type: "audio";
   fileId: string;
-  duration: number;
+  duration?: number;
 }
 export type LineWorksOutboundAudioMessage =
   | LineWorksOutboundAudioUrlMessage

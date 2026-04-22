@@ -30,6 +30,25 @@ const LineWorksCommonConfigSchema = z.object({
   thinkingAck: ThinkingAckSchema.optional(),
   groupRequireMention: z.boolean().optional().default(false),
   botMentionHandle: z.string().optional(),
+  extraScopes: z.array(z.string()).optional(),
+  senderProfileEnrichment: z.boolean().optional().default(true),
+  mailPreFetch: z
+    .object({
+      enabled: z.boolean().optional(),
+      count: z.number().int().min(1).max(50).optional(),
+    })
+    .strict()
+    .optional(),
+  publicBaseUrl: z.string().url().optional(),
+  oauth: z
+    .object({
+      enabled: z.boolean().optional(),
+      startPath: z.string().optional(),
+      callbackPath: z.string().optional(),
+      scopes: z.string().optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 const LineWorksAccountConfigSchema = LineWorksCommonConfigSchema.strict();

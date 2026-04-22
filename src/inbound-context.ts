@@ -20,6 +20,13 @@ export type LineWorksInboundMessage = {
   media?: LineWorksInboundMedia[];
   /** Raw attachment resourceIds to download before dispatch. */
   attachmentResourceIds?: string[];
+  /** Enriched sender profile, populated from Directory API. These are
+   * used for the `resolved sender` log line — they are NOT rendered into
+   * the agent's prompt (openclaw core drops custom ctx fields). */
+  senderEmail?: string;
+  senderFullName?: string;
+  senderDepartment?: string;
+  senderTitle?: string;
 };
 
 export function buildLineWorksInboundContext<TContext>(params: {
@@ -41,6 +48,16 @@ export function buildLineWorksInboundContext<TContext>(params: {
   const mediaPayload = msg.media?.length
     ? buildAgentMediaPayload(msg.media.map((m) => ({ path: m.path, contentType: m.contentType })))
     : {};
+  const displayName = msg.senderFullName || msg.senderName || msg.from;
+  // NOTE: custom keys we add to the context object (SenderEmail, RecentMail,
+  // SenderFullName, etc.) are silently dropped by openclaw core's prompt
+  // builder — only a small allow-list survives. Prepending to `Body` also
+  // didn't override the user-message content that reaches the model. So
+  // we don't attempt in-prompt injection anymore.
+  //
+  // The supported path is: the agent reads the OAuth token from disk and
+  // calls LINE WORKS APIs directly via `exec` + `curl`. See
+  // `LINEWORKS_API.md` in the agent's workspace for the runbook.
   return params.finalizeInboundContext({
     Body: msg.body,
     RawBody: msg.body,
@@ -52,11 +69,11 @@ export function buildLineWorksInboundContext<TContext>(params: {
     OriginatingChannel: CHANNEL_ID,
     OriginatingTo: conversationRef,
     ChatType: msg.chatType,
-    SenderName: msg.senderName,
+    SenderName: displayName,
     SenderId: msg.from,
     Provider: CHANNEL_ID,
     Surface: CHANNEL_ID,
-    ConversationLabel: msg.senderName || msg.from,
+    ConversationLabel: displayName,
     Timestamp: Date.now(),
     CommandAuthorized: msg.commandAuthorized,
     ...mediaPayload,

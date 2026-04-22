@@ -146,6 +146,55 @@ describe("extractDirectives — quick_replies", () => {
   });
 });
 
+describe("extractDirectives — mail_send", () => {
+  it("parses a well-formed mail_send block", () => {
+    const r = extractDirectives(
+      `here is a summary\n\n[[mail_send:\nto: alice@example.com, bob@example.com\ncc: carol@example.com\nsubject: Follow-up\nbody:\nHi Alice,\nHere is the summary.\n]]\nok`,
+    );
+    expect(r.mailSends).toHaveLength(1);
+    expect(r.mailSends[0]!).toEqual({
+      to: ["alice@example.com", "bob@example.com"],
+      cc: ["carol@example.com"],
+      bcc: undefined,
+      subject: "Follow-up",
+      body: "Hi Alice,\nHere is the summary.",
+    });
+    expect(r.residualText).toBe("here is a summary\n\nok");
+    expect(r.parseErrors).toHaveLength(0);
+  });
+
+  it("rejects mail_send without to", () => {
+    const r = extractDirectives(
+      `[[mail_send:\nsubject: x\nbody:\ny\n]]`,
+    );
+    expect(r.mailSends).toHaveLength(0);
+    expect(r.parseErrors[0]!).toMatch(/missing `to:`/);
+  });
+
+  it("rejects mail_send without subject", () => {
+    const r = extractDirectives(
+      `[[mail_send:\nto: a@b.com\nbody:\ny\n]]`,
+    );
+    expect(r.mailSends).toHaveLength(0);
+    expect(r.parseErrors[0]!).toMatch(/missing `subject:`/);
+  });
+
+  it("rejects mail_send without body", () => {
+    const r = extractDirectives(
+      `[[mail_send:\nto: a@b.com\nsubject: x\n]]`,
+    );
+    expect(r.mailSends).toHaveLength(0);
+    expect(r.parseErrors[0]!).toMatch(/missing `body:`/);
+  });
+
+  it("preserves multi-line body verbatim", () => {
+    const r = extractDirectives(
+      `[[mail_send:\nto: a@b.com\nsubject: x\nbody:\nline one\n\nline three after blank\n]]`,
+    );
+    expect(r.mailSends[0]!.body).toBe("line one\n\nline three after blank");
+  });
+});
+
 describe("extractDirectives — combined", () => {
   it("handles flex + location + quick_replies together", () => {
     const r = extractDirectives(

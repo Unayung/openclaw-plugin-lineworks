@@ -6,12 +6,14 @@ import {
   uploadLineWorksAttachment,
 } from "./attachments.js";
 import { chunkText, LINEWORKS_TEXT_CHUNK_LIMIT } from "./chunk-text.js";
+import { getUserProfile } from "./directory.js";
 import { extractDirectives } from "./directives.js";
 import {
   buildLineWorksInboundContext,
   type LineWorksInboundMedia,
   type LineWorksInboundMessage,
 } from "./inbound-context.js";
+import { sendMail } from "./mail.js";
 import { getLineWorksRuntime } from "./runtime.js";
 import { sendMessage, sendText } from "./send.js";
 import { buildLineWorksInboundSessionKey } from "./session-key.js";
@@ -63,7 +65,10 @@ function mediaKindForExt(ext: string): MediaKind {
  * Compose a LINE WORKS content payload from a resolved local-file upload,
  * branching by media kind. For video, LINE WORKS requires `previewImageUrl`
  * when using URL form; the fileId form sends without a preview thumbnail.
- * For audio, a duration is required — default 10s if unknown.
+ * For audio, the official spec (bot-send-audio) only accepts `type` + one
+ * of `originalContentUrl`/`fileId` — NO `duration`. Sending a bonus
+ * `duration` field triggers a 400 INVALID_PARAMETER with a misleading
+ * "content.fileId content is invalid" message.
  */
 function buildContentFromUpload(
   kind: MediaKind,
@@ -75,7 +80,7 @@ function buildContentFromUpload(
     case "video":
       return { type: "video", fileId: uploaded.fileId };
     case "audio":
-      return { type: "audio", fileId: uploaded.fileId, duration: DEFAULT_AUDIO_DURATION_MS };
+      return { type: "audio", fileId: uploaded.fileId };
     default:
       return { type: "file", fileId: uploaded.fileId, fileName: uploaded.fileName };
   }
@@ -94,7 +99,7 @@ function buildContentFromHttpsUrl(
       // rejects the video. Return undefined so the caller can log.
       return undefined;
     case "audio":
-      return { type: "audio", originalContentUrl: url, duration: DEFAULT_AUDIO_DURATION_MS };
+      return { type: "audio", originalContentUrl: url };
     default:
       return undefined;
   }
@@ -156,9 +161,49 @@ export async function dispatchLineWorksInboundTurn(params: {
     }
   }
 
+  // Best-effort directory lookup to attach email/name/department to context.
+  // Failures (missing scope, 401/403, network) are logged and treated as null
+  // so the agent still gets the message — just without the enriched profile.
+  let senderEmail: string | undefined;
+  let senderFullName: string | undefined;
+  let senderDepartment: string | undefined;
+  let senderTitle: string | undefined;
+  if (params.account.senderProfileEnrichment && params.msg.from) {
+    try {
+      const profile = await getUserProfile({
+        account: params.account,
+        userId: params.msg.from,
+        log: params.log,
+      });
+      if (profile) {
+        senderEmail = profile.email;
+        senderFullName = profile.displayName || profile.userName;
+        senderDepartment = profile.department;
+        senderTitle = profile.position;
+        params.log?.info?.(
+          `LINE WORKS: resolved sender ${params.msg.from} → ${profile.email ?? "?"} (${senderFullName ?? "?"})`,
+        );
+      }
+    } catch (err) {
+      params.log?.warn?.(
+        `LINE WORKS: directory lookup failed for ${params.msg.from}: ${String(err)}`,
+      );
+    }
+  }
+
+  // Context enrichment removed in v0.5.0: openclaw's prompt builder drops
+  // custom ctx keys, so the model never saw these anyway. The supported
+  // path is for the agent to read the OAuth token from disk and call
+  // LINE WORKS APIs directly via `exec` + `curl`. We still resolve the
+  // sender email above (it's used for the `resolved sender` log line,
+  // which helps operators follow what's happening).
   const msgWithMedia: LineWorksInboundMessage = {
     ...params.msg,
     media: media.length ? media : undefined,
+    senderEmail,
+    senderFullName,
+    senderDepartment,
+    senderTitle,
   };
 
   const msgCtx = buildLineWorksInboundContext({
@@ -219,11 +264,48 @@ export async function dispatchLineWorksInboundTurn(params: {
           flex: flexFromText,
           locations: locationsFromText,
           quickReply: quickReplyFromText,
+          mailSends,
           residualText,
           parseErrors,
         } = extractDirectives(rawText);
         for (const err of parseErrors) params.log?.warn?.(`LINE WORKS: ${err}`);
         const text = residualText;
+
+        // Execute mail_send directives before composing the outbound reply.
+        // Each result becomes a short "✉︎ sent to <recipients>" / "✉︎ failed"
+        // note appended after the agent's text so the user sees what landed.
+        const mailResultNotes: string[] = [];
+        for (const mail of mailSends) {
+          const fromMailbox = msgWithMedia.senderEmail;
+          if (!fromMailbox) {
+            mailResultNotes.push(
+              `✉︎ mail skipped (need sender email; user.profile.read scope not granted?)`,
+            );
+            params.log?.warn?.(
+              `LINE WORKS: mail_send requested but sender email unknown (userId=${params.msg.from})`,
+            );
+            continue;
+          }
+          try {
+            await sendMail({
+              account: params.account,
+              from: fromMailbox,
+              to: mail.to,
+              cc: mail.cc,
+              bcc: mail.bcc,
+              subject: mail.subject,
+              body: mail.body,
+            });
+            mailResultNotes.push(`✉︎ sent to ${mail.to.join(", ")}`);
+            params.log?.info?.(
+              `LINE WORKS: mail sent from=${fromMailbox} to=${mail.to.join(",")} subject="${mail.subject.slice(0, 60)}"`,
+            );
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            mailResultNotes.push(`✉︎ mail send failed: ${msg.slice(0, 100)}`);
+            params.log?.error?.(`LINE WORKS: mail send failed: ${msg}`);
+          }
+        }
 
         const lw = (payload.channelData?.lineworks ?? {}) as {
           flexMessage?: { altText: string; contents: Record<string, unknown> };
@@ -247,13 +329,22 @@ export async function dispatchLineWorksInboundTurn(params: {
           !text &&
           rawMediaUrls.length === 0 &&
           flex.length === 0 &&
-          locations.length === 0
+          locations.length === 0 &&
+          mailResultNotes.length === 0
         ) {
           params.log?.info?.(
             `LINE WORKS: deliver called with empty payload for ${params.msg.from} (skipping send)`,
           );
           return;
         }
+
+        // Fold mail result notes into the text the user sees, either appended
+        // to the agent's reply (with a blank line before) or as their own
+        // message when the agent said nothing.
+        const textWithMailNotes =
+          mailResultNotes.length > 0
+            ? (text ? `${text}\n\n${mailResultNotes.join("\n")}` : mailResultNotes.join("\n"))
+            : text;
 
         // Build an ordered sequence of LINE WORKS messages: media → text →
         // flex → location. The last one gets the quickReply attached.
@@ -311,7 +402,7 @@ export async function dispatchLineWorksInboundTurn(params: {
           }
         }
 
-        if (text) outbound.push({ type: "text", text });
+        if (textWithMailNotes) outbound.push({ type: "text", text: textWithMailNotes });
         for (const fl of flex) outbound.push(fl);
         for (const loc of locations) outbound.push(loc);
 

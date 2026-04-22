@@ -1,8 +1,41 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { buildRandomTempFilePath } from "openclaw/plugin-sdk/temp-path";
 import { getAccessToken } from "./auth.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
+
+/**
+ * LINE WORKS audio messages reject MPEG-2 MP3 (OpenAI tts-1 default output)
+ * with a misleading "content.fileId content is invalid" error. M4A uploads
+ * but doesn't render with a play button on mobile clients. WAV works end to
+ * end including mobile playback. So for any compressed audio format we
+ * normalize to WAV via ffmpeg before uploading.
+ *
+ * Requires `ffmpeg` on PATH. If missing or conversion fails, we fall back to
+ * the original file — the audio send will likely fail, but a File-type send
+ * (if invoked) still works with the original bytes.
+ */
+const AUDIO_NEEDS_CONVERSION = new Set(["mp3", "m4a", "aac", "ogg", "oga", "opus"]);
+
+function needsWavConversion(filePath: string): boolean {
+  const ext = path.extname(filePath).slice(1).toLowerCase();
+  return AUDIO_NEEDS_CONVERSION.has(ext);
+}
+
+function convertAudioToWav(srcPath: string): string | null {
+  const dest = buildRandomTempFilePath({ prefix: "lineworks-wav", extension: "wav" });
+  try {
+    execFileSync(
+      "ffmpeg",
+      ["-y", "-i", srcPath, "-ar", "44100", "-ac", "1", "-f", "wav", dest],
+      { stdio: "ignore" },
+    );
+    return dest;
+  } catch {
+    return null;
+  }
+}
 
 const LINEWORKS_API_BASE = "https://www.worksapis.com/v1.0";
 const DEFAULT_MAX_BYTES = 15 * 1024 * 1024;
@@ -104,6 +137,8 @@ function mimeFor(filePath: string): string {
   if (ext === "mp4") return "video/mp4";
   if (ext === "mp3") return "audio/mpeg";
   if (ext === "m4a") return "audio/mp4";
+  if (ext === "aac") return "audio/aac";
+  if (ext === "wav") return "audio/wav";
   if (ext === "pdf") return "application/pdf";
   return "application/octet-stream";
 }
@@ -120,8 +155,20 @@ export async function uploadLineWorksAttachment(args: {
   fileName?: string;
 }): Promise<{ fileId: string; fileName: string }> {
   const { account } = args;
-  const resolvedFileName = args.fileName ?? path.basename(args.filePath);
   const access = await getAccessToken(account);
+
+  // Normalize compressed audio to WAV before upload. LINE WORKS audio
+  // messages reject MP3 (OpenAI tts-1's MPEG-2 24kHz) with an opaque 400,
+  // and M4A uploads but has no mobile play button. WAV works everywhere.
+  let uploadFilePath = args.filePath;
+  let uploadFileName = args.fileName ?? path.basename(args.filePath);
+  if (needsWavConversion(args.filePath)) {
+    const wavPath = convertAudioToWav(args.filePath);
+    if (wavPath) {
+      uploadFilePath = wavPath;
+      uploadFileName = uploadFileName.replace(/\.(mp3|m4a|aac|ogg|oga|opus)$/i, ".wav");
+    }
+  }
 
   // Step 1 — request an upload URL
   const step1 = await fetch(
@@ -132,7 +179,7 @@ export async function uploadLineWorksAttachment(args: {
         authorization: `${access.tokenType} ${access.token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ fileName: resolvedFileName }),
+      body: JSON.stringify({ fileName: uploadFileName }),
     },
   );
   if (!step1.ok) {
@@ -142,14 +189,14 @@ export async function uploadLineWorksAttachment(args: {
   const init = (await step1.json()) as { uploadUrl: string; fileId: string };
 
   // Step 2 — POST the binary to the returned uploadUrl
-  const bytes = await fs.promises.readFile(args.filePath);
+  const bytes = await fs.promises.readFile(uploadFilePath);
   const form = new FormData();
   form.append(
     "FileData",
-    new Blob([new Uint8Array(bytes)], { type: mimeFor(args.filePath) }),
-    resolvedFileName,
+    new Blob([new Uint8Array(bytes)], { type: mimeFor(uploadFilePath) }),
+    uploadFileName,
   );
-  form.append("resourceName", resolvedFileName);
+  form.append("resourceName", uploadFileName);
   const step2 = await fetch(init.uploadUrl, {
     method: "POST",
     headers: { authorization: `${access.tokenType} ${access.token}` },
@@ -160,7 +207,7 @@ export async function uploadLineWorksAttachment(args: {
     throw new Error(`LINE WORKS upload bytes failed: ${step2.status} ${text}`);
   }
 
-  return { fileId: init.fileId, fileName: resolvedFileName };
+  return { fileId: init.fileId, fileName: uploadFileName };
 }
 
 export function isHttpUrl(s: string): boolean {

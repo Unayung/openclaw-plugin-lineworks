@@ -2,6 +2,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/account-resolution";
 import { registerPluginHttpRoute } from "openclaw/plugin-sdk/webhook-ingress";
 import { hasLineWorksCredentials } from "./accounts.js";
 import { dispatchLineWorksInboundTurn } from "./inbound-turn.js";
+import { handleOAuthCallback, handleOAuthStart } from "./oauth.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
 import { createLineWorksWebhookHandler } from "./webhook-handler.js";
 
@@ -117,9 +118,46 @@ export function registerLineWorksWebhookRoute(params: {
     handler,
   });
 
+  // Register OAuth start + callback routes alongside the webhook when
+  // oauth.enabled is set AND a public base URL is configured. Skipped
+  // silently otherwise — mail/task/drive features will fall back to
+  // "need grant" prompts.
+  let unregisterOAuthStart: (() => void) | undefined;
+  let unregisterOAuthCallback: (() => void) | undefined;
+  if (account.oauthEnabled && account.publicBaseUrl) {
+    const adapterLog = createLogAdapter(log);
+    unregisterOAuthStart = registerPluginHttpRoute({
+      path: account.oauthStartPath,
+      auth: "plugin",
+      pluginId: CHANNEL_ID,
+      accountId: account.accountId,
+      log: (msg: string) => log?.info?.(msg),
+      handler: async (req, res) =>
+        await handleOAuthStart({ req, res, account, log: adapterLog }),
+    });
+    unregisterOAuthCallback = registerPluginHttpRoute({
+      path: account.oauthCallbackPath,
+      auth: "plugin",
+      pluginId: CHANNEL_ID,
+      accountId: account.accountId,
+      log: (msg: string) => log?.info?.(msg),
+      handler: async (req, res) =>
+        await handleOAuthCallback({ req, res, account, log: adapterLog }),
+    });
+    log?.info?.(
+      `LINE WORKS OAuth routes registered: ${account.oauthStartPath} + ${account.oauthCallbackPath} (redirect_uri: ${account.publicBaseUrl}${account.oauthCallbackPath})`,
+    );
+  } else if (account.oauthEnabled && !account.publicBaseUrl) {
+    log?.warn?.(
+      "LINE WORKS: oauth.enabled=true but channels.lineworks.publicBaseUrl is unset — OAuth routes NOT registered",
+    );
+  }
+
   activeRouteUnregisters.set(key, unregister);
   return () => {
     unregister();
+    unregisterOAuthStart?.();
+    unregisterOAuthCallback?.();
     activeRouteUnregisters.delete(key);
   };
 }

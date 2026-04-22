@@ -133,8 +133,27 @@ export function resolveLineWorksAccount(
     botMentionHandle: merged.botMentionHandle?.trim().replace(/^@/, "") || undefined,
     allowFrom: normalizeAllowFrom(merged.allowFrom),
     groupAllowFrom: normalizeAllowFrom(merged.groupAllowFrom),
+    extraScopes: normalizeScopes(merged.extraScopes),
+    senderProfileEnrichment: merged.senderProfileEnrichment ?? true,
+    mailPreFetchEnabled: merged.mailPreFetch?.enabled ?? false,
+    mailPreFetchCount: Math.min(50, Math.max(1, merged.mailPreFetch?.count ?? 10)),
+    publicBaseUrl: merged.publicBaseUrl?.trim().replace(/\/+$/, "") || undefined,
+    oauthEnabled: merged.oauth?.enabled ?? false,
+    oauthStartPath: merged.oauth?.startPath?.trim() || "/oauth/lineworks/start",
+    oauthCallbackPath: merged.oauth?.callbackPath?.trim() || "/oauth/lineworks/callback",
+    oauthScopes:
+      merged.oauth?.scopes?.trim() ||
+      "mail,mail.read,task,task.read,file,file.read,calendar,calendar.read,user.profile.read,user.email.read",
     config: { ...channelCfg, ...merged },
   };
+}
+
+function normalizeScopes(raw: string[] | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .flatMap((entry) => (typeof entry === "string" ? entry.split(/\s+/) : []))
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function resolveDefaultLineWorksAccountId(

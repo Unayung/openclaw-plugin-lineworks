@@ -2,9 +2,21 @@ import { SignJWT, importPKCS8 } from "jose";
 import type { LineWorksAccessToken, ResolvedLineWorksAccount } from "./types.js";
 
 const LINEWORKS_AUTH_URL = "https://auth.worksmobile.com/oauth2/v2.0/token";
-const TOKEN_SCOPE = "bot bot.read";
+const BASE_SCOPES = ["bot", "bot.read", "user.profile.read"] as const;
 const JWT_TTL_SECONDS = 60 * 60;
 const REFRESH_SKEW_MS = 60_000;
+
+function resolveTokenScope(account: ResolvedLineWorksAccount): string {
+  // Base scopes cover bot messaging + directory lookup (email/name). Extra
+  // scopes (e.g. "mail mail.read", "calendar.read") come from config when the
+  // operator has granted them on the Developer Console app.
+  const extras = account.extraScopes ?? [];
+  const all = [...BASE_SCOPES, ...extras]
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const uniq = Array.from(new Set(all));
+  return uniq.join(" ");
+}
 
 type TokenCacheEntry = {
   token: LineWorksAccessToken;
@@ -54,7 +66,7 @@ async function requestAccessToken(
     grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
     client_id: account.clientId,
     client_secret: account.clientSecret,
-    scope: TOKEN_SCOPE,
+    scope: resolveTokenScope(account),
   });
 
   const res = await fetch(LINEWORKS_AUTH_URL, {
