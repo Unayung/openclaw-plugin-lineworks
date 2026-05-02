@@ -5,9 +5,6 @@
   "type": "module",
   "main": "./index.ts",
   "license": "MIT",
-  "dependencies": {
-    "jose": "^5.10.0"
-  },
   "peerDependencies": {
     "openclaw": "^2026.4.15"
   },
@@ -21,6 +18,7 @@
     "@types/node": "^22.19.17",
     "@vitest/coverage-v8": "^4.1.4",
     "express": "^5.2.1",
+    "jose": "^5.10.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.4"
   },

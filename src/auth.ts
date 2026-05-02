@@ -1,5 +1,10 @@
-import { SignJWT, importPKCS8 } from "jose";
+import { createPrivateKey, createSign, type KeyObject } from "node:crypto";
 import type { LineWorksAccessToken, ResolvedLineWorksAccount } from "./types.js";
+
+function base64url(input: Buffer | string): string {
+  const buf = typeof input === "string" ? Buffer.from(input, "utf8") : input;
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 const LINEWORKS_AUTH_URL = "https://auth.worksmobile.com/oauth2/v2.0/token";
 const BASE_SCOPES = ["bot", "bot.read", "user.profile.read"] as const;
@@ -31,9 +36,9 @@ function cacheKey(account: ResolvedLineWorksAccount): string {
 
 async function buildAssertion(account: ResolvedLineWorksAccount): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  let key: Awaited<ReturnType<typeof importPKCS8>>;
+  let key: KeyObject;
   try {
-    key = await importPKCS8(account.privateKey, "RS256");
+    key = createPrivateKey({ key: account.privateKey, format: "pem" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const pem = account.privateKey ?? "";
@@ -48,13 +53,16 @@ async function buildAssertion(account: ResolvedLineWorksAccount): Promise<string
       `LINE WORKS: unable to parse private key for account "${account.accountId}": ${msg} (${hint})`,
     );
   }
-  return await new SignJWT({})
-    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
-    .setIssuer(account.clientId)
-    .setSubject(account.serviceAccount)
-    .setIssuedAt(now)
-    .setExpirationTime(now + JWT_TTL_SECONDS)
-    .sign(key);
+  const header = { alg: "RS256", typ: "JWT" };
+  const payload = {
+    iss: account.clientId,
+    sub: account.serviceAccount,
+    iat: now,
+    exp: now + JWT_TTL_SECONDS,
+  };
+  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`;
+  const signature = createSign("RSA-SHA256").update(signingInput).sign(key);
+  return `${signingInput}.${base64url(signature)}`;
 }
 
 async function requestAccessToken(
