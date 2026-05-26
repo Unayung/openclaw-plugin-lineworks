@@ -11,6 +11,14 @@ const ThinkingAckSchema = z
   })
   .strict();
 
+const LineWorksChannelEntrySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    requireMention: z.boolean().optional(),
+    users: z.array(z.union([z.string(), z.number()])).optional(),
+  })
+  .strict();
+
 const LineWorksCommonConfigSchema = z.object({
   enabled: z.boolean().optional(),
   clientId: z.string().optional(),
@@ -29,6 +37,20 @@ const LineWorksCommonConfigSchema = z.object({
   webhookPath: z.string().optional(),
   thinkingAck: ThinkingAckSchema.optional(),
   groupRequireMention: z.boolean().optional().default(false),
+  /**
+   * Alias for `groupRequireMention`, matching the Slack plugin's account-level
+   * field name. When both are set, this takes precedence. Per-channel entries
+   * in `channels` may override on a per-channel basis.
+   */
+  requireMention: z.boolean().optional(),
+  /**
+   * Per-channel (group) settings keyed by LINE WORKS channelId. Mirrors the
+   * Slack plugin's `channels` map: when populated and `groupPolicy` is
+   * `allowlist`, only listed channels (or the `*` wildcard fallback) are
+   * accepted. Each entry may override `requireMention` and restrict which
+   * senders (`users`) may trigger the bot in that channel.
+   */
+  channels: z.record(z.string(), LineWorksChannelEntrySchema.optional()).optional(),
   botMentionHandle: z.string().optional(),
   extraScopes: z.array(z.string()).optional(),
   senderProfileEnrichment: z.boolean().optional().default(true),

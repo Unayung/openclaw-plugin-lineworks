@@ -6,6 +6,10 @@ import {
   readRequestBodyWithLimit,
   requestBodyErrorToText,
 } from "openclaw/plugin-sdk/webhook-ingress";
+import {
+  isSenderAllowedByUsers,
+  resolveLineWorksChannelConfig,
+} from "./channel-config.js";
 import type { LineWorksInboundMessage } from "./inbound-context.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
 import {
@@ -192,24 +196,56 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
         return;
       }
 
-      // Group-chat mention gate: when groupRequireMention is enabled, skip
-      // dispatch for group messages that don't @mention the bot. DMs always
-      // dispatch regardless. Mention is detected via content.mentionees (the
-      // bot's accountId appearing) OR by the agent's display name token in
-      // the text body (best-effort).
-      if (event.kind === "channel-message" && account.groupRequireMention) {
-        const mentions = isMentioningBot(content, account);
-        const textPreview =
-          content.type === "text" ? (content.text ?? "").slice(0, 80) : `<${content.type}>`;
-        log?.info?.(
-          `lineworks: mention-gate channelId=${event.source.type === "channel" ? event.source.channelId.slice(0, 8) : "?"} handle=${account.botMentionHandle ?? "<unset>"} mentions=${mentions} text="${textPreview}"`,
-        );
-        if (!mentions) {
+      // Group-chat preflight: resolve per-channel access control (mirrors the
+      // Slack plugin's `resolveSlackChannelConfig` + sender-allowlist gate).
+      // Order matters — authorization is checked before the mention gate so
+      // unauthorized senders don't get their message text logged.
+      if (event.kind === "channel-message" && event.source.type === "channel") {
+        const channelId = event.source.channelId;
+        const senderId = event.source.userId;
+        const resolved = resolveLineWorksChannelConfig({
+          channelId,
+          channels: account.channels,
+          groupPolicy: account.groupPolicy,
+          defaultRequireMention: account.requireMention,
+        });
+
+        if (!resolved.allowed) {
           log?.info?.(
-            `lineworks: group message not mentioning bot — skipping (groupRequireMention=true)`,
+            `lineworks: blocked channel-message channelId=${channelId.slice(0, 8)} reason=channel-not-allowed (groupPolicy=${account.groupPolicy})`,
           );
           respondNoContent(res);
           return;
+        }
+
+        // Backward-compat: account-level `groupAllowFrom` applies when the
+        // per-channel `users` list isn't configured. Slack has no equivalent;
+        // we keep it as a fallback so existing lineworks deployments don't
+        // break when they upgrade.
+        const effectiveUsers =
+          resolved.users.length > 0 ? resolved.users : account.groupAllowFrom;
+        if (!isSenderAllowedByUsers(effectiveUsers, senderId)) {
+          log?.info?.(
+            `lineworks: Blocked unauthorized lineworks sender ${senderId ?? "<unknown>"} (not in channel users) channelId=${channelId.slice(0, 8)}`,
+          );
+          respondNoContent(res);
+          return;
+        }
+
+        if (resolved.requireMention) {
+          const mentions = isMentioningBot(content, account);
+          const textPreview =
+            content.type === "text" ? (content.text ?? "").slice(0, 80) : `<${content.type}>`;
+          log?.info?.(
+            `lineworks: mention-gate channelId=${channelId.slice(0, 8)} handle=${account.botMentionHandle ?? "<unset>"} mentions=${mentions} text="${textPreview}"`,
+          );
+          if (!mentions) {
+            log?.info?.(
+              `lineworks: group message not mentioning bot — skipping (requireMention=true)`,
+            );
+            respondNoContent(res);
+            return;
+          }
         }
       }
 

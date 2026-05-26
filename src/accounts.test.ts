@@ -77,3 +77,56 @@ describe("resolveDefaultLineWorksAccountId", () => {
     expect(resolveDefaultLineWorksAccountId(cfg(base))).toBe(DEFAULT_ACCOUNT_ID);
   });
 });
+
+describe("channels + requireMention resolution", () => {
+  it("normalizes channels map with defaults", () => {
+    const acc = resolveLineWorksAccount(
+      cfg({
+        ...base,
+        channels: {
+          C1: { users: ["U1", "U2"], requireMention: true },
+          C2: { enabled: false },
+          "  ": { users: ["should-skip"] },
+        },
+      }),
+    );
+    expect(acc.channels.C1).toEqual({
+      enabled: true,
+      requireMention: true,
+      users: ["U1", "U2"],
+    });
+    expect(acc.channels.C2).toEqual({
+      enabled: false,
+      requireMention: undefined,
+      users: [],
+    });
+    expect(acc.channels["  "]).toBeUndefined();
+  });
+
+  it("requireMention alias takes precedence over groupRequireMention", () => {
+    expect(
+      resolveLineWorksAccount(cfg({ ...base, requireMention: true })).requireMention,
+    ).toBe(true);
+    expect(
+      resolveLineWorksAccount(cfg({ ...base, groupRequireMention: true })).requireMention,
+    ).toBe(true);
+    expect(
+      resolveLineWorksAccount(
+        cfg({ ...base, requireMention: false, groupRequireMention: true }),
+      ).requireMention,
+    ).toBe(false);
+    expect(resolveLineWorksAccount(cfg(base)).requireMention).toBe(false);
+  });
+
+  it("inherits channels into named sub-account", () => {
+    const acc = resolveLineWorksAccount(
+      cfg({
+        ...base,
+        channels: { C1: { users: ["U1"] } },
+        accounts: { alt: { botId: "b2" } },
+      }),
+      "alt",
+    );
+    expect(acc.channels.C1?.users).toEqual(["U1"]);
+  });
+});

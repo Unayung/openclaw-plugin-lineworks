@@ -8,6 +8,31 @@ export interface LineWorksThinkingAckConfig {
   text?: string;
 }
 
+/**
+ * Per-channel access control entry. Mirrors Slack's `channels.<id>` shape so
+ * config semantics stay aligned across providers. Use `*` as the key for a
+ * wildcard fallback applied to any channel not explicitly listed.
+ */
+export interface LineWorksChannelEntryConfig {
+  /** When false, the bot ignores all messages in this channel. Default true. */
+  enabled?: boolean;
+  /** Override account-level `requireMention` for this channel. */
+  requireMention?: boolean;
+  /**
+   * If set and non-empty, only LINE WORKS userIds (or `*` for all) in this
+   * list may trigger the bot in this channel. Empty/unset = no per-channel
+   * sender restriction.
+   */
+  users?: Array<string | number>;
+}
+
+/** Resolved (normalized) per-channel entry used by the runtime. */
+export interface ResolvedLineWorksChannelEntry {
+  enabled: boolean;
+  requireMention?: boolean;
+  users: string[];
+}
+
 interface LineWorksAccountBaseConfig {
   enabled?: boolean;
   clientId?: string;
@@ -27,6 +52,16 @@ interface LineWorksAccountBaseConfig {
   thinkingAck?: LineWorksThinkingAckConfig;
   /** When true, the bot only responds to group messages that @mention it. */
   groupRequireMention?: boolean;
+  /**
+   * Alias for `groupRequireMention` matching Slack's account-level naming.
+   * When both are set, `requireMention` takes precedence.
+   */
+  requireMention?: boolean;
+  /**
+   * Per-channel (group) settings keyed by LINE WORKS channelId. See
+   * `LineWorksChannelEntryConfig`. Use `*` for a wildcard fallback.
+   */
+  channels?: Record<string, LineWorksChannelEntryConfig>;
   /**
    * The @handle users type to mention this bot (without the leading @).
    * Example: "Racco" matches text containing "@Racco". Case-insensitive.
@@ -132,9 +167,16 @@ export interface ResolvedLineWorksAccount {
   dmPolicy: LineWorksDmPolicy;
   groupPolicy: LineWorksGroupPolicy;
   groupRequireMention: boolean;
+  /**
+   * Effective account-level requireMention (resolved from `requireMention`
+   * with fallback to `groupRequireMention`).
+   */
+  requireMention: boolean;
   botMentionHandle: string | undefined;
   allowFrom: string[];
   groupAllowFrom: string[];
+  /** Normalized per-channel access control map. */
+  channels: Record<string, ResolvedLineWorksChannelEntry>;
   extraScopes: string[];
   senderProfileEnrichment: boolean;
   mailPreFetchEnabled: boolean;

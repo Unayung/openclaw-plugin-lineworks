@@ -7,10 +7,12 @@ import {
 } from "openclaw/plugin-sdk/account-resolution";
 import type {
   LineWorksAccountConfig,
+  LineWorksChannelEntryConfig,
   LineWorksConfig,
   LineWorksDmPolicy,
   LineWorksGroupPolicy,
   ResolvedLineWorksAccount,
+  ResolvedLineWorksChannelEntry,
 } from "./types.js";
 
 export { DEFAULT_ACCOUNT_ID };
@@ -36,6 +38,24 @@ function normalizeAllowFrom(raw: Array<string | number> | undefined): string[] {
   return raw
     .map((entry) => String(entry).trim())
     .filter(Boolean);
+}
+
+function normalizeChannels(
+  raw: Record<string, LineWorksChannelEntryConfig | undefined> | undefined,
+): Record<string, ResolvedLineWorksChannelEntry> {
+  if (!raw) return {};
+  const out: Record<string, ResolvedLineWorksChannelEntry> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (!entry) continue;
+    const id = key.trim();
+    if (!id) continue;
+    out[id] = {
+      enabled: entry.enabled ?? true,
+      requireMention: entry.requireMention,
+      users: normalizeAllowFrom(entry.users),
+    };
+  }
+  return out;
 }
 
 function envOr(value: string | undefined, envKey: string): string {
@@ -114,6 +134,7 @@ export function resolveLineWorksAccount(
   const dmPolicy: LineWorksDmPolicy = (merged.dmPolicy ?? "pairing") as LineWorksDmPolicy;
   const groupPolicy: LineWorksGroupPolicy =
     (merged.groupPolicy ?? "allowlist") as LineWorksGroupPolicy;
+  const requireMention = merged.requireMention ?? merged.groupRequireMention ?? false;
 
   return {
     accountId: id,
@@ -130,9 +151,11 @@ export function resolveLineWorksAccount(
     dmPolicy,
     groupPolicy,
     groupRequireMention: merged.groupRequireMention ?? false,
+    requireMention,
     botMentionHandle: merged.botMentionHandle?.trim().replace(/^@/, "") || undefined,
     allowFrom: normalizeAllowFrom(merged.allowFrom),
     groupAllowFrom: normalizeAllowFrom(merged.groupAllowFrom),
+    channels: normalizeChannels(merged.channels),
     extraScopes: normalizeScopes(merged.extraScopes),
     senderProfileEnrichment: merged.senderProfileEnrichment ?? true,
     mailPreFetchEnabled: merged.mailPreFetch?.enabled ?? false,

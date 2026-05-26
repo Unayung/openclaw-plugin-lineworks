@@ -137,6 +137,8 @@ const lineWorksConfigAdapter = createHybridChannelConfigAdapter<ResolvedLineWork
     "groupPolicy",
     "allowFrom",
     "groupAllowFrom",
+    "channels",
+    "requireMention",
   ],
   resolveAllowFrom: (account) => account.allowFrom,
   formatAllowFrom: (allowFrom) => allowFrom.map((x) => String(x).trim()).filter(Boolean),
@@ -154,6 +156,11 @@ const collectLineWorksSecurityWarnings =
       account.dmPolicy === "allowlist" &&
       account.allowFrom.length === 0 &&
       '- LINE WORKS: dmPolicy="allowlist" with empty allowFrom blocks all senders.',
+    (account) =>
+      account.groupPolicy === "allowlist" &&
+      Object.keys(account.channels).length === 0 &&
+      account.groupAllowFrom.length === 0 &&
+      '- LINE WORKS: groupPolicy="allowlist" without channels.<id> entries and empty groupAllowFrom — effectively open to any group the bot is in. Add channels.<channelId> entries (with optional users) to restrict access.',
   );
 
 function resolveSendContext(args: {
