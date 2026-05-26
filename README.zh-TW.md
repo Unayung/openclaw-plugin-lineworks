@@ -166,7 +166,21 @@ loader 來回序列化時可能會被破壞。
 
       // 誰可以在群組中對 bot 發訊息
       "groupPolicy": "allowlist",      // open | allowlist | disabled
-      "groupAllowFrom": ["channel-id-a"],
+      "groupAllowFrom": ["user-id-a"], // 舊版的 account 全域 sender allowlist
+      "requireMention": true,          // "groupRequireMention" 的 alias
+
+      // 每個頻道的存取控制(對齊 Slack plugin 的 channels map)。
+      // 當 channels 非空且 groupPolicy="allowlist" 時,只有列出的頻道
+      // 或 "*" wildcard fallback 會接受訊息。每筆 entry 可用 `users`
+      // 限制可觸發的 sender、或 override `requireMention`。
+      "channels": {
+        "<channelId>": {
+          "enabled": true,             // false = 忽略這個頻道
+          "requireMention": true,      // 覆蓋 account-level 設定
+          "users": ["user-id-a", "user-id-b"]  // "*" = 任何人
+        },
+        "*": { "users": ["admin-user-id"] }    // 其他未列出頻道的 fallback
+      },
 
       // Gateway 註冊 LINE WORKS callback 的 path
       "webhookPath": "/lineworks/webhook",

@@ -171,7 +171,21 @@ config loader 経由でラウンドトリップすると静かに壊れること
 
       // グループチャットで Bot にメッセージを送れる相手
       "groupPolicy": "allowlist",      // open | allowlist | disabled
-      "groupAllowFrom": ["channel-id-a"],
+      "groupAllowFrom": ["user-id-a"], // 旧来のアカウント全体 sender allowlist
+      "requireMention": true,          // "groupRequireMention" の alias
+
+      // チャンネル単位のアクセス制御(Slack プラグインの channels マップに対応)。
+      // channels が空でなく groupPolicy="allowlist" の場合、
+      // 列挙されたチャンネル(または "*" wildcard)のみメッセージを受け付ける。
+      // 各エントリは `users` で送信者を制限したり、`requireMention` を上書きできる。
+      "channels": {
+        "<channelId>": {
+          "enabled": true,             // false = このチャンネルを無視
+          "requireMention": true,      // account-level を上書き
+          "users": ["user-id-a", "user-id-b"]  // "*" = 誰でも
+        },
+        "*": { "users": ["admin-user-id"] }    // 未列挙チャンネルの fallback
+      },
 
       // Gateway が LINE WORKS callback 用に登録するパス
       "webhookPath": "/lineworks/webhook",

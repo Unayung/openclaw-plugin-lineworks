@@ -170,7 +170,21 @@ PEM through config loaders can subtly corrupt it.
 
       // Who may message the bot in group chats
       "groupPolicy": "allowlist",      // open | allowlist | disabled
-      "groupAllowFrom": ["channel-id-a"],
+      "groupAllowFrom": ["user-id-a"], // legacy account-wide sender allowlist
+      "requireMention": true,          // alias for "groupRequireMention"
+
+      // Per-channel access control (mirrors Slack plugin's channels map).
+      // When channels is non-empty AND groupPolicy="allowlist", only listed
+      // channels — or the "*" wildcard fallback — accept messages. Each entry
+      // may restrict senders via `users` and override `requireMention`.
+      "channels": {
+        "<channelId>": {
+          "enabled": true,             // false = ignore this channel
+          "requireMention": true,      // override account-level
+          "users": ["user-id-a", "user-id-b"]  // "*" = anyone
+        },
+        "*": { "users": ["admin-user-id"] }    // fallback for all other channels
+      },
 
       // Path the gateway registers for LINE WORKS callbacks
       "webhookPath": "/lineworks/webhook",
