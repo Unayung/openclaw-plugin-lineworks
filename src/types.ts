@@ -4,7 +4,11 @@ export type LineWorksGroupPolicy = "open" | "allowlist" | "disabled";
 export interface LineWorksThinkingAckConfig {
   /** Ms to wait before sending the ack. 0 disables. Default 5000. */
   delayMs?: number;
-  /** Text of the ack message. Default "⋯". */
+  /**
+   * Ack content. Default "⋯". A `sticker:<packageId>:<stickerId>` value sends
+   * a LINE WORKS sticker instead of text (e.g. "sticker:7482:13835641");
+   * anything else is sent verbatim as a text message.
+   */
   text?: string;
 }
 
@@ -302,6 +306,16 @@ export interface LineWorksOutboundLocationMessage {
 }
 
 /**
+ * LINE WORKS sticker. `packageId` + `stickerId` reference a sticker from the
+ * LINE WORKS / LINE sticker catalog. Used by the sticker thinking-ack.
+ */
+export interface LineWorksOutboundStickerMessage {
+  type: "sticker";
+  packageId: string;
+  stickerId: string;
+}
+
+/**
  * Quick reply attached to any message. Each item renders as a tappable chip
  * under the message; tapping sends the action back (as a new user message for
  * "message" type, as a postback for "postback", etc.).
@@ -330,7 +344,8 @@ export type LineWorksOutboundMessage =
   | LineWorksOutboundFlexMessage
   | LineWorksOutboundVideoMessage
   | LineWorksOutboundAudioMessage
-  | LineWorksOutboundLocationMessage;
+  | LineWorksOutboundLocationMessage
+  | LineWorksOutboundStickerMessage;
 
 export type LineWorksTarget =
   | { type: "user"; userId: string }

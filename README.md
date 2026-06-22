@@ -20,6 +20,7 @@ file, Flex cards, pinned locations, and tap-reply buttons.
 - ✅ **Outbound**: text, image, video, audio, file (HTTPS URL or local-file
   auto-upload), Flex messages, locations, quick-reply buttons
 - ✅ **Thinking ack**: optional "⋯" placeholder if the agent takes > 5s
+  (or a sticker via `"text": "sticker:<packageId>:<stickerId>"`)
 - ✅ **Multi-account**: one plugin install can drive multiple LINE WORKS bots
 - ✅ **Pairing-gated DMs**: same security model as the bundled LINE plugin
 
@@ -190,12 +191,32 @@ PEM through config loaders can subtly corrupt it.
       "webhookPath": "/lineworks/webhook",
 
       // Thinking indicator (no native API on LINE WORKS; we fake it with a
-      // delayed text message). delayMs: 0 disables.
+      // delayed message). delayMs: 0 disables. `text` is sent verbatim, OR set
+      // it to "sticker:<packageId>:<stickerId>" to ack with a sticker instead.
       "thinkingAck": { "delayMs": 5000, "text": "⋯" }
     }
   }
 }
 ```
+
+#### Sticker thinking ack
+
+`thinkingAck.text` normally holds the text sent when the agent takes longer
+than `delayMs`. Set it to `sticker:<packageId>:<stickerId>` to send a LINE
+WORKS sticker instead:
+
+```json5
+"thinkingAck": { "delayMs": 3000, "text": "sticker:7482:13835641" }
+```
+
+- `packageId` / `stickerId` reference a sticker from the LINE WORKS / LINE
+  sticker catalog.
+- Any value **not** starting with `sticker:` is still sent as a plain text
+  message (unchanged behavior).
+- A malformed spec (missing `packageId` or `stickerId`) falls back to sending
+  the raw text, so a typo never silently drops the ack.
+- It's per account — each bot can use its own sticker, plain text, or
+  `delayMs: 0` to disable.
 
 ### Multiple accounts
 
