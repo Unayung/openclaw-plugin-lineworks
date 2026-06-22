@@ -20,6 +20,7 @@ file, Flex cards, pinned locations, and tap-reply buttons.
 - ✅ **Outbound**: text, image, video, audio, file (HTTPS URL or local-file
   auto-upload), Flex messages, locations, quick-reply buttons
 - ✅ **Thinking ack**: optional "⋯" placeholder if the agent takes > 5s
+  (or a sticker via `"text": "sticker:<packageId>:<stickerId>"`)
 - ✅ **Multi-account**: one plugin install can drive multiple LINE WORKS bots
 - ✅ **Pairing-gated DMs**: same security model as the bundled LINE plugin
 

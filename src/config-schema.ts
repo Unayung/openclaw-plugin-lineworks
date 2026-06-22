@@ -7,6 +7,7 @@ const GroupPolicySchema = z.enum(["open", "allowlist", "disabled"]);
 const ThinkingAckSchema = z
   .object({
     delayMs: z.number().int().min(0).optional(),
+    // Plain text, or "sticker:<packageId>:<stickerId>" to ack with a sticker.
     text: z.string().optional(),
   })
   .strict();

@@ -17,6 +17,7 @@ postback),轉送給你的 openclaw agent,並將 agent 的回覆以文字、圖�
 - ✅ **Outbound**:文字、圖片、影片、語音、檔案(HTTPS URL 或本地檔案自動上傳)、
   Flex 訊息、位置、快速回覆按鈕
 - ✅ **Thinking ack**:選擇性的 "⋯" 佔位訊息,當 agent 處理超過 5 秒時送出
+  (也可用 `"text": "sticker:<packageId>:<stickerId>"` 改送貼圖)
 - ✅ **Multi-account**:一次安裝即可驅動多個 LINE WORKS Bot
 - ✅ **Pairing-gated DMs**:與內建 LINE 外掛相同的安全模型
 
