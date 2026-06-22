@@ -20,7 +20,7 @@
 - ✅ **Outbound**:テキスト・画像・動画・音声・ファイル(HTTPS URL またはローカル
   ファイルの自動アップロード)・Flex メッセージ・位置情報・クイックリプライボタン
 - ✅ **Thinking ack**:エージェントの処理が 5 秒を超えたときに送る「⋯」プレース
-  ホルダー(任意)
+  ホルダー(任意。`"text": "sticker:<packageId>:<stickerId>"` でスタンプ送信も可)
 - ✅ **Multi-account**:1 回のインストールで複数の LINE WORKS Bot を動かせる
 - ✅ **Pairing-gated DMs**:バンドルの LINE プラグインと同じセキュリティモデル
 
@@ -191,7 +191,8 @@ config loader 経由でラウンドトリップすると静かに壊れること
       "webhookPath": "/lineworks/webhook",
 
       // Thinking インジケータ(LINE WORKS にネイティブ API は無い;遅延送信の
-      // テキストメッセージで模倣)。delayMs: 0 で無効化。
+      // メッセージで模倣)。delayMs: 0 で無効化。text はそのまま送信されるが、
+      // "sticker:<packageId>:<stickerId>" にするとスタンプで ack する。
       "thinkingAck": { "delayMs": 5000, "text": "⋯" },
 
       // グループ内で @メンション された時のみ応答する。botMentionHandle と併設。
@@ -201,6 +202,22 @@ config loader 経由でラウンドトリップすると静かに壊れること
   }
 }
 ```
+
+#### スタンプ thinking ack
+
+`thinkingAck.text` は通常、エージェントの処理が `delayMs` を超えたときに送る
+テキストです。これを `sticker:<packageId>:<stickerId>` にすると、テキストの
+代わりに LINE WORKS スタンプを送信します:
+
+```json5
+"thinkingAck": { "delayMs": 3000, "text": "sticker:7482:13835641" }
+```
+
+- `packageId` / `stickerId` は LINE WORKS / LINE スタンプカタログのスタンプを指します。
+- `sticker:` で始まら**ない**値は、従来どおりプレーンテキストとして送信されます。
+- 不正な指定(`packageId` または `stickerId` の欠落)は元のテキスト送信に
+  フォールバックするため、タイプミスで ack が消えることはありません。
+- アカウント単位の設定です —— bot ごとにスタンプ・テキスト・`delayMs: 0`(無効)を選べます。
 
 ### 複数アカウント
 

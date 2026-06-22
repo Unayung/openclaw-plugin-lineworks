@@ -17,6 +17,7 @@ postback),轉送給你的 openclaw agent,並將 agent 的回覆以文字、圖�
 - ✅ **Outbound**:文字、圖片、影片、語音、檔案(HTTPS URL 或本地檔案自動上傳)、
   Flex 訊息、位置、快速回覆按鈕
 - ✅ **Thinking ack**:選擇性的 "⋯" 佔位訊息,當 agent 處理超過 5 秒時送出
+  (也可用 `"text": "sticker:<packageId>:<stickerId>"` 改送貼圖)
 - ✅ **Multi-account**:一次安裝即可驅動多個 LINE WORKS Bot
 - ✅ **Pairing-gated DMs**:與內建 LINE 外掛相同的安全模型
 
@@ -185,8 +186,9 @@ loader 來回序列化時可能會被破壞。
       // Gateway 註冊 LINE WORKS callback 的 path
       "webhookPath": "/lineworks/webhook",
 
-      // Thinking 指示(LINE WORKS 沒有原生 API;這裡用一則延遲文字訊息模擬)。
-      // delayMs: 0 表示停用。
+      // Thinking 指示(LINE WORKS 沒有原生 API;這裡用一則延遲訊息模擬)。
+      // delayMs: 0 表示停用。text 會原樣送出,或設成
+      // "sticker:<packageId>:<stickerId>" 改用貼圖回覆。
       "thinkingAck": { "delayMs": 5000, "text": "⋯" },
 
       // 群組中僅在被 @提及 時才回應。需同時設定 botMentionHandle。
@@ -196,6 +198,20 @@ loader 來回序列化時可能會被破壞。
   }
 }
 ```
+
+#### 貼圖 thinking ack
+
+`thinkingAck.text` 平常放的是 agent 處理超過 `delayMs` 時送出的文字。把它設成
+`sticker:<packageId>:<stickerId>` 就會改送 LINE WORKS 貼圖:
+
+```json5
+"thinkingAck": { "delayMs": 3000, "text": "sticker:7482:13835641" }
+```
+
+- `packageId` / `stickerId` 對應 LINE WORKS / LINE 貼圖庫的貼圖。
+- 任何**不是** `sticker:` 開頭的值,維持原本行為以純文字送出。
+- 格式錯誤(缺 `packageId` 或 `stickerId`)會 fallback 成送原始文字,打錯字不會默默漏掉 ack。
+- 此設定為 per-account —— 每隻 bot 可各自用貼圖、純文字,或 `delayMs: 0` 停用。
 
 ### 多帳號
 

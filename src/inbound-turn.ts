@@ -48,6 +48,19 @@ function targetDescription(t: LineWorksTarget): string {
   return t.type === "channel" ? `channel:${t.channelId}` : `user:${t.userId}`;
 }
 
+/**
+ * Parse a `sticker:<packageId>:<stickerId>` thinking-ack value. Returns the
+ * ids when well-formed, or null so the caller can fall back to a text ack.
+ */
+export function parseStickerAck(
+  text: string,
+): { packageId: string; stickerId: string } | null {
+  if (!text.startsWith("sticker:")) return null;
+  const [, packageId, stickerId] = text.split(":");
+  if (!packageId || !stickerId) return null;
+  return { packageId, stickerId };
+}
+
 function extOf(p: string): string {
   return p.toLowerCase().split(".").pop() ?? "";
 }
@@ -232,9 +245,23 @@ export async function dispatchLineWorksInboundTurn(params: {
       params.log?.info?.(
         `LINE WORKS: thinking-ack fired for ${targetDesc} after ${ackDelayMs}ms (text: ${ackText})`,
       );
-      sendText({ account: params.account, target: replyTarget, text: ackText }).catch((err) => {
-        params.log?.warn?.(`LINE WORKS: thinking-ack send failed: ${String(err)}`);
-      });
+      // `sticker:<packageId>:<stickerId>` sends a LINE WORKS sticker as the
+      // ack instead of text. Malformed values fall back to plain text so a
+      // typo never silently drops the ack.
+      const sticker = parseStickerAck(ackText);
+      if (sticker) {
+        sendMessage({
+          account: params.account,
+          target: replyTarget,
+          message: { type: "sticker", ...sticker },
+        }).catch((err) => {
+          params.log?.warn?.(`LINE WORKS: thinking-ack send sticker failed: ${String(err)}`);
+        });
+      } else {
+        sendText({ account: params.account, target: replyTarget, text: ackText }).catch((err) => {
+          params.log?.warn?.(`LINE WORKS: thinking-ack send failed: ${String(err)}`);
+        });
+      }
     }, ackDelayMs);
   }
 
