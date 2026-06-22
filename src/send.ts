@@ -32,11 +32,29 @@ export async function sendMessage(args: {
   }
 }
 
+// `sticker:"<packageId>:<stickerId>"` (quotes optional) — a shorthand for
+// sending a native LINE WORKS sticker through the plain-text path. Used by the
+// `thinkingAck` config so an ack can be a sticker instead of text.
+const STICKER_SHORTHAND_RE = /^sticker:"?(\d+):(\d+)"?$/;
+
 export async function sendText(args: {
   account: ResolvedLineWorksAccount;
   target: LineWorksTarget;
   text: string;
 }): Promise<void> {
+  const stickerMatch = args.text.trim().match(STICKER_SHORTHAND_RE);
+  if (stickerMatch) {
+    const [, packageId, stickerId] = stickerMatch;
+    if (packageId && stickerId) {
+      await sendMessage({
+        account: args.account,
+        target: args.target,
+        message: { type: "sticker", packageId, stickerId },
+      });
+      return;
+    }
+  }
+
   const chunks = chunkText(args.text, LINEWORKS_TEXT_CHUNK_LIMIT);
   for (const chunk of chunks) {
     await sendMessage({

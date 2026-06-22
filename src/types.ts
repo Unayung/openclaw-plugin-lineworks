@@ -254,6 +254,17 @@ export interface LineWorksOutboundFileMessage {
 }
 
 /**
+ * LINE WORKS sticker message. `packageId`/`stickerId` are the same identifiers
+ * surfaced on inbound sticker events. Authored in config/replies via the
+ * `sticker:"<packageId>:<stickerId>"` shorthand, which `sendText` expands.
+ */
+export interface LineWorksOutboundStickerMessage {
+  type: "sticker";
+  packageId: string;
+  stickerId: string;
+}
+
+/**
  * LINE WORKS Flex message. Structurally identical to LINE consumer Flex —
  * a bubble or carousel of bubbles with boxes, text, images, buttons, and URI
  * actions. `altText` is what shows on notifications + fallback clients.
@@ -327,6 +338,7 @@ export type LineWorksOutboundMessage =
   | LineWorksOutboundTextMessage
   | LineWorksOutboundImageMessage
   | LineWorksOutboundFileMessage
+  | LineWorksOutboundStickerMessage
   | LineWorksOutboundFlexMessage
   | LineWorksOutboundVideoMessage
   | LineWorksOutboundAudioMessage
