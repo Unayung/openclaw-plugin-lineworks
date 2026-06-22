@@ -1,6 +1,6 @@
 {
   "name": "@unayung/lineworks",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "OpenClaw LINE WORKS channel plugin (PoC)",
   "type": "module",
   "main": "./index.ts",

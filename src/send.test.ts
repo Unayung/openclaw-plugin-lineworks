@@ -182,6 +182,58 @@ describe("sendText", () => {
     expect(sends).toHaveLength(1);
   });
 
+  it("expands the sticker: shorthand (quoted) into a sticker message", async () => {
+    const account = await setupAccount();
+    const { calls, mock } = mockFetchSequence();
+    globalThis.fetch = mock;
+
+    await sendText({
+      account,
+      target: { type: "user", userId: "u" },
+      text: 'sticker:"584:4443"',
+    });
+
+    const sends = calls.filter((c) => c.url.includes("/bots/"));
+    expect(sends).toHaveLength(1);
+    expect(JSON.parse(sends[0].body!)).toEqual({
+      content: { type: "sticker", packageId: "584", stickerId: "4443" },
+    });
+  });
+
+  it("expands the sticker: shorthand (unquoted, surrounding whitespace) too", async () => {
+    const account = await setupAccount();
+    const { calls, mock } = mockFetchSequence();
+    globalThis.fetch = mock;
+
+    await sendText({
+      account,
+      target: { type: "user", userId: "u" },
+      text: "  sticker:7482:13835647  ",
+    });
+
+    const sends = calls.filter((c) => c.url.includes("/bots/"));
+    expect(JSON.parse(sends[0].body!).content).toEqual({
+      type: "sticker",
+      packageId: "7482",
+      stickerId: "13835647",
+    });
+  });
+
+  it("treats sticker-like text that is not the exact shorthand as plain text", async () => {
+    const account = await setupAccount();
+    const { calls, mock } = mockFetchSequence();
+    globalThis.fetch = mock;
+
+    await sendText({
+      account,
+      target: { type: "user", userId: "u" },
+      text: "send me sticker:584:4443 please",
+    });
+
+    const sends = calls.filter((c) => c.url.includes("/bots/"));
+    expect(JSON.parse(sends[0].body!).content.type).toBe("text");
+  });
+
   it("chunks text longer than 2000 chars and prefers newline boundaries", async () => {
     const account = await setupAccount();
     const { calls, mock } = mockFetchSequence();
