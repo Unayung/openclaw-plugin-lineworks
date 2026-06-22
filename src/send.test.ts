@@ -195,7 +195,7 @@ describe("sendText", () => {
 
     const sends = calls.filter((c) => c.url.includes("/bots/"));
     expect(sends).toHaveLength(1);
-    expect(JSON.parse(sends[0].body!)).toEqual({
+    expect(JSON.parse(sends[0]!.body!)).toEqual({
       content: { type: "sticker", packageId: "584", stickerId: "4443" },
     });
   });
@@ -212,7 +212,7 @@ describe("sendText", () => {
     });
 
     const sends = calls.filter((c) => c.url.includes("/bots/"));
-    expect(JSON.parse(sends[0].body!).content).toEqual({
+    expect(JSON.parse(sends[0]!.body!).content).toEqual({
       type: "sticker",
       packageId: "7482",
       stickerId: "13835647",
@@ -231,7 +231,7 @@ describe("sendText", () => {
     });
 
     const sends = calls.filter((c) => c.url.includes("/bots/"));
-    expect(JSON.parse(sends[0].body!).content.type).toBe("text");
+    expect(JSON.parse(sends[0]!.body!).content.type).toBe("text");
   });
 
   it("chunks text longer than 2000 chars and prefers newline boundaries", async () => {
