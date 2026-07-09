@@ -27,7 +27,7 @@ import {
   mediaKindForContentType,
   uploadLineWorksAttachment,
 } from "./attachments.js";
-import { sendMessage, sendText } from "./send.js";
+import { buildTextOutboundMessages, sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
 
@@ -457,7 +457,25 @@ export function createLineWorksPlugin(): LineWorksPlugin {
       textChunkLimit: 2000,
       sendText: async ({ to, text, accountId, cfg }: LineWorksSendTextContext) => {
         const { account, target } = resolveSendContext({ cfg, accountId, to });
-        await sendText({ account, target, text });
+        if (text.includes("[[")) {
+          // Reply carries inline directives (e.g. `[[quick_replies: …]]`).
+          // Process them on the gateway outbound path too — not just the inbound
+          // reply dispatcher. Message-tool sends (e.g. group replies in
+          // message_tool mode) come through here; without this they leak the raw
+          // directive text instead of rendering chips.
+          //
+          // In a group, chip taps send a plain label with no @mention and would
+          // be dropped by the mention gate — so rewrite chip actions to mention
+          // the bot. In a DM no mention is needed, so leave chips as the label.
+          const groupMentionHandle =
+            target.type === "channel" ? account.botMentionHandle : undefined;
+          for (const message of buildTextOutboundMessages(text, { groupMentionHandle })) {
+            await sendMessage({ account, target, message });
+          }
+        } else {
+          // Plain text (or a `sticker:"…"` shorthand) — original path.
+          await sendText({ account, target, text });
+        }
         return attachChannelToResult(LINEWORKS_CHANNEL_ID, {
           messageId: `lw-${Date.now()}`,
           chatId: to,

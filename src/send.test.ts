@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import { exportPKCS8 } from "jose";
 import { clearAccessTokenCache } from "./auth.js";
-import { sendMessage, sendText } from "./send.js";
+import { buildTextOutboundMessages, sendMessage, sendText } from "./send.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
 
 function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
@@ -255,5 +255,99 @@ describe("sendText", () => {
       .map((c) => JSON.parse(c.body!).content.text)
       .join("");
     expect(concatenated).toBe(text);
+  });
+});
+
+describe("buildTextOutboundMessages", () => {
+  it("strips a quick_replies directive and attaches chips to the message", () => {
+    const messages = buildTextOutboundMessages(
+      "你想哪種角色？ [[quick_replies: 社群小編, 資料分析師, 客服專員]]",
+    );
+    expect(messages).toHaveLength(1);
+    const [msg] = messages;
+    if (!msg || msg.type !== "text") throw new Error("expected a text message");
+    expect(msg.text).toBe("你想哪種角色？");
+    expect(msg.text).not.toContain("[[quick_replies");
+    expect(msg.quickReply?.items).toHaveLength(3);
+  });
+
+  it("handles emoji-keycap labels", () => {
+    const messages = buildTextOutboundMessages(
+      "選一個 [[quick_replies: 1️⃣ 社群小編, 2️⃣ 資料分析師, 3️⃣ 客服專員]]",
+    );
+    const [msg] = messages;
+    if (!msg || msg.type !== "text") throw new Error("expected a text message");
+    expect(msg.text).not.toContain("[[quick_replies");
+    expect(msg.quickReply?.items).toHaveLength(3);
+  });
+
+  it("attaches chips only to the last chunk of a long reply", () => {
+    const long = "a".repeat(2500);
+    const messages = buildTextOutboundMessages(`${long} [[quick_replies: Yes, No]]`);
+    expect(messages.length).toBeGreaterThan(1);
+    const first = messages[0];
+    if (!first || first.type !== "text") throw new Error("expected a text message");
+    expect(first.quickReply).toBeUndefined();
+    const last = messages[messages.length - 1];
+    if (!last || last.type !== "text") throw new Error("expected a text message");
+    expect(last.quickReply?.items).toHaveLength(2);
+  });
+
+  it("returns a plain text message when there is no directive", () => {
+    expect(buildTextOutboundMessages("just text")).toEqual([{ type: "text", text: "just text" }]);
+  });
+
+  it("carries chips on a minimal message when the reply is directive-only", () => {
+    const messages = buildTextOutboundMessages("[[quick_replies: A, B]]");
+    expect(messages).toHaveLength(1);
+    const [msg] = messages;
+    if (!msg || msg.type !== "text") throw new Error("expected a text message");
+    expect(msg.quickReply?.items).toHaveLength(2);
+  });
+
+  it("renders a flex directive as a flex message, ordered after text", () => {
+    const messages = buildTextOutboundMessages('here [[flex: my card ||| {"type":"bubble"}]]');
+    expect(messages.map((m) => m.type)).toEqual(["text", "flex"]);
+    const flex = messages.find((m) => m.type === "flex");
+    expect(flex).toMatchObject({ type: "flex", altText: "my card" });
+  });
+
+  it("renders a location directive as a location message", () => {
+    const messages = buildTextOutboundMessages(
+      "meet here [[location: Taipei 101 | No. 7 Xinyi Rd | 25.0330 | 121.5654]]",
+    );
+    const loc = messages.find((m) => m.type === "location");
+    expect(loc).toMatchObject({ type: "location", title: "Taipei 101", latitude: 25.033 });
+  });
+
+  it("attaches chips to the last message even when it is a flex card", () => {
+    const messages = buildTextOutboundMessages(
+      'card [[flex: c ||| {"type":"bubble"}]] [[quick_replies: A, B]]',
+    );
+    const last = messages[messages.length - 1];
+    expect(last?.type).toBe("flex");
+    expect((last as { quickReply?: { items: unknown[] } }).quickReply?.items).toHaveLength(2);
+  });
+
+  it("prefixes group chip actions with the bot mention (label stays clean)", () => {
+    const messages = buildTextOutboundMessages("選一個 [[quick_replies: 社群小編, 客服專員]]", {
+      groupMentionHandle: "Raccoon AI Crew",
+    });
+    const [msg] = messages;
+    if (!msg || msg.type !== "text") throw new Error("expected a text message");
+    const items = msg.quickReply?.items ?? [];
+    expect(items.map((i) => (i.action.type === "message" ? i.action.text : ""))).toEqual([
+      "@Raccoon AI Crew 社群小編",
+      "@Raccoon AI Crew 客服專員",
+    ]);
+    expect(items.map((i) => i.action.label)).toEqual(["社群小編", "客服專員"]);
+  });
+
+  it("leaves chip actions un-mentioned when no groupMentionHandle (DM)", () => {
+    const messages = buildTextOutboundMessages("選一個 [[quick_replies: A, B]]");
+    const [msg] = messages;
+    if (!msg || msg.type !== "text") throw new Error("expected a text message");
+    const items = msg.quickReply?.items ?? [];
+    expect(items.map((i) => (i.action.type === "message" ? i.action.text : ""))).toEqual(["A", "B"]);
   });
 });

@@ -234,6 +234,7 @@ export type LineWorksInboundContent =
 export interface LineWorksOutboundTextMessage {
   type: "text";
   text: string;
+  quickReply?: LineWorksQuickReply;
 }
 
 export interface LineWorksOutboundImageUrlMessage {
