@@ -1,6 +1,6 @@
 {
   "name": "@unayung/lineworks",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "OpenClaw LINE WORKS channel plugin (PoC)",
   "type": "module",
   "main": "./index.ts",
@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -36,6 +37,8 @@
     "setup-entry.ts",
     "src/**/*.ts",
     "!src/**/*.test.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
     "openclaw.plugin.json",
     "README.md",
     "LICENSE"
