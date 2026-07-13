@@ -134,6 +134,42 @@ describe("parseInboundEvent", () => {
     });
     expect(left?.kind).toBe("member-left");
     expect(left?.members).toEqual(["u-1"]);
+
+    // Verified payloads (developers.worksmobile.com/jp/docs/bot-callback-begin,
+    // .../bot-callback-end) — 1:1 talk room start/end.
+    const begin = parseInboundEvent({
+      type: "begin",
+      source: {
+        userId: "user0001-e3e9-4063-1d22-04978003f354",
+        channelId: "12345",
+        domainId: 40029600,
+      },
+      issuedTime: "2022-01-04T05:16:05Z",
+    });
+    expect(begin?.kind).toBe("talk-begin");
+    expect(begin?.source).toEqual({
+      type: "channel",
+      channelId: "12345",
+      userId: "user0001-e3e9-4063-1d22-04978003f354",
+      domainId: "40029600",
+    });
+
+    const end = parseInboundEvent({
+      type: "end",
+      source: {
+        userId: "user0001-e3e9-4063-1d22-04978003f354",
+        channelId: "12345",
+        domainId: 40029600,
+      },
+      issuedTime: "2022-01-04T05:16:05.716Z",
+    });
+    expect(end?.kind).toBe("talk-end");
+    expect(end?.source).toEqual({
+      type: "channel",
+      channelId: "12345",
+      userId: "user0001-e3e9-4063-1d22-04978003f354",
+      domainId: "40029600",
+    });
   });
 
   it("returns undefined for malformed events", () => {

@@ -26,6 +26,22 @@
  *     identity having send permission for the `from` mailbox. Body starts on
  *     the line after `body:` and continues to the close brackets.
  *
+ *   [[calendar_create:
+ *   summary: Quarterly sync
+ *   start: 2026-07-15T14:00:00
+ *   end: 2026-07-15T15:00:00
+ *   timezone: Asia/Taipei
+ *   location: Room A
+ *   attendees: a@b.com, c@b.com
+ *   description:
+ *   Free-form description, multi-line, runs to the closing ]].
+ *   ]]
+ *     Create an event in the sender's default calendar (per-user OAuth,
+ *     `calendar` scope). summary/start/end/timezone are required; timezone is
+ *     an IANA name and start/end are bare local timestamps (no UTC offset —
+ *     LINE WORKS carries the zone separately). location/attendees/description
+ *     are optional; description is the last field, multi-line.
+ *
  * All directives may appear anywhere in the text; the surrounding text is sent
  * as a separate text message. Multiple flex/location directives are allowed;
  * only the first quick_replies directive is honored (LINE WORKS attaches one
@@ -42,6 +58,7 @@ const FLEX_RE = /\[\[flex:\s*([\s\S]*?)\]\]/g;
 const LOCATION_RE = /\[\[location:\s*([\s\S]*?)\]\]/g;
 const QUICK_RE = /\[\[quick_replies:\s*([\s\S]*?)\]\]/g;
 const MAIL_RE = /\[\[mail_send:\s*([\s\S]*?)\]\]/g;
+const CALENDAR_RE = /\[\[calendar_create:\s*([\s\S]*?)\]\]/g;
 const FLEX_SEP = "|||";
 
 export interface MailSendDirective {
@@ -52,11 +69,24 @@ export interface MailSendDirective {
   body: string;
 }
 
+export interface CalendarCreateDirective {
+  summary: string;
+  /** Bare local timestamp `YYYY-MM-DDTHH:mm:ss` (no offset). */
+  start: string;
+  end: string;
+  /** IANA timezone name, e.g. "Asia/Taipei". */
+  timeZone: string;
+  location?: string;
+  attendeeEmails?: string[];
+  description?: string;
+}
+
 export interface ExtractedDirectives {
   flex: LineWorksOutboundFlexMessage[];
   locations: LineWorksOutboundLocationMessage[];
   quickReply: LineWorksQuickReply | undefined;
   mailSends: MailSendDirective[];
+  calendarCreates: CalendarCreateDirective[];
   residualText: string;
   parseErrors: string[];
 }
@@ -68,6 +98,7 @@ export function extractDirectives(text: string): ExtractedDirectives {
       locations: [],
       quickReply: undefined,
       mailSends: [],
+      calendarCreates: [],
       residualText: text,
       parseErrors: [],
     };
@@ -76,6 +107,7 @@ export function extractDirectives(text: string): ExtractedDirectives {
   const flex: LineWorksOutboundFlexMessage[] = [];
   const locations: LineWorksOutboundLocationMessage[] = [];
   const mailSends: MailSendDirective[] = [];
+  const calendarCreates: CalendarCreateDirective[] = [];
   const parseErrors: string[] = [];
   let quickReply: LineWorksQuickReply | undefined;
 
@@ -109,12 +141,19 @@ export function extractDirectives(text: string): ExtractedDirectives {
     return "";
   });
 
+  residualText = residualText.replace(CALENDAR_RE, (_m, inner: string) => {
+    const parsed = parseCalendarCreate(inner);
+    if (parsed.ok) calendarCreates.push(parsed.directive);
+    else parseErrors.push(parsed.reason);
+    return "";
+  });
+
   residualText = residualText
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  return { flex, locations, quickReply, mailSends, residualText, parseErrors };
+  return { flex, locations, quickReply, mailSends, calendarCreates, residualText, parseErrors };
 }
 
 // ---- parsers -------------------------------------------------------------
@@ -247,6 +286,79 @@ function parseMailSend(
       bcc: bcc.length ? bcc : undefined,
       subject,
       body,
+    },
+  };
+}
+
+// Bare local timestamp — LINE WORKS carries the zone in a separate field, so
+// an embedded UTC offset would be silently misinterpreted. Seconds optional.
+const CALENDAR_DT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+
+function parseCalendarCreate(
+  inner: string,
+): { ok: true; directive: CalendarCreateDirective } | { ok: false; reason: string } {
+  // `description:` is the boundary — everything after it (to the end of the
+  // directive) is the description, verbatim. Mirrors mail_send's `body:`.
+  const descMarker = /(^|\n)\s*description\s*:/i.exec(inner);
+  let headerPart: string;
+  let description = "";
+  if (descMarker) {
+    headerPart = inner.slice(0, descMarker.index);
+    description = inner
+      .slice(descMarker.index + descMarker[0].length)
+      .replace(/^\n/, "")
+      .trim();
+  } else {
+    headerPart = inner;
+  }
+
+  let summary = "";
+  let start = "";
+  let end = "";
+  let timeZone = "";
+  let location = "";
+  let attendees: string[] = [];
+  for (const line of headerPart.split(/\r?\n/)) {
+    const m = /^\s*(summary|start|end|timezone|location|attendees)\s*:\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const key = m[1]!.toLowerCase();
+    const val = (m[2] ?? "").trim();
+    if (key === "summary") summary = val;
+    else if (key === "start") start = val;
+    else if (key === "end") end = val;
+    else if (key === "timezone") timeZone = val;
+    else if (key === "location") location = val;
+    else if (key === "attendees") attendees = splitEmails(val);
+  }
+
+  if (!summary) return { ok: false, reason: "calendar_create directive missing `summary:`" };
+  if (!start || !end) {
+    return { ok: false, reason: "calendar_create directive missing `start:` or `end:`" };
+  }
+  if (!timeZone) {
+    return {
+      ok: false,
+      reason: "calendar_create directive missing `timezone:` (IANA name, e.g. Asia/Taipei)",
+    };
+  }
+  if (!CALENDAR_DT_RE.test(start) || !CALENDAR_DT_RE.test(end)) {
+    return {
+      ok: false,
+      reason:
+        "calendar_create start/end must be bare local `YYYY-MM-DDTHH:mm[:ss]` (no UTC offset)",
+    };
+  }
+  const normalize = (dt: string) => (dt.length === 16 ? `${dt}:00` : dt);
+  return {
+    ok: true,
+    directive: {
+      summary,
+      start: normalize(start),
+      end: normalize(end),
+      timeZone,
+      location: location || undefined,
+      attendeeEmails: attendees.length ? attendees : undefined,
+      description: description || undefined,
     },
   };
 }

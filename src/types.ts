@@ -200,6 +200,8 @@ export type LineWorksInboundKind =
   | "bot-left"
   | "member-joined"
   | "member-left"
+  | "talk-begin"
+  | "talk-end"
   | "postback"
   | "unknown";
 

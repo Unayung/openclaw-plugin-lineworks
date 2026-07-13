@@ -382,6 +382,45 @@ room the bot participates in. Verified against
   distinguish "cannot list" from "really has no members". The SDK
   `listGroupMembers` hook throws in that case.
 
+## Extended LINE WORKS APIs (verified)
+
+All endpoints below were verified against developers.worksmobile.com docs
+(verbatim shapes recorded in each module's doc comments). Every read fails
+closed — `null` on any error, never a fake empty list — and every write
+returns `{ok:false, reason}` instead of throwing.
+
+| Module | Functions | Endpoint(s) | Auth / scope |
+|---|---|---|---|
+| `src/org-directory.ts` | `listUsers`, `listGroups` | `GET /users`, `GET /groups` | service account; `user.read` / `group.read` via `extraScopes` (see below) |
+| `src/bot-extras.ts` | `getChannelInfo`, `registerPersistentMenu`, `getPersistentMenu`, `deletePersistentMenu` | `GET /bots/{botId}/channels/{channelId}`, `POST/GET/DELETE /bots/{botId}/persistentmenu` | service account; existing `bot`/`bot.read` — no new grant |
+| `src/calendar.ts` | `createCalendarEvent`, `listUpcomingEvents` | `POST/GET /users/{userId}/calendar/events` | per-user OAuth; `calendar` / `calendar.read` |
+| `src/tasks.ts` | `createTask`, `listTasks` | `POST/GET /users/{userId}/tasks` | per-user OAuth ONLY; `task` / `task.read` |
+| `src/drive.ts` | `uploadDriveFile`, `listDriveFiles`, `createDriveShareLink` | `POST/GET /users/{userId}/drive/files…` (2-phase upload) | per-user OAuth ONLY; `file` / `file.read` |
+| `src/board.ts` | `listBoards`, `createBoardPost` | `GET /boards`, `POST /boards/{boardId}/posts` | per-user OAuth; `board` / `board.read` |
+
+Operator notes:
+
+- **Directory listing** (`listPeers`/`listGroups` in the openclaw directory
+  surface) needs `user.read` and `group.read` added to
+  `channels.lineworks.extraScopes` AND granted to the app in the Developer
+  Console. Without them the calls fail closed with a scope hint in the log.
+- **Board is opt-in**: `board,board.read` is deliberately NOT in the default
+  consent scope list (requesting a scope the Developer Console app hasn't
+  been granted can break the consent flow). To use the board module, add
+  them to `channels.lineworks.oauth.scopes`, grant Board to the app in the
+  Developer Console, and have users re-run the OAuth grant flow.
+- **Quirks worth knowing**: calendar datetimes are bare local timestamps +
+  separate IANA `timeZone` field (no UTC offsets); task listing requires
+  `categoryId` ("default" is used); board post `body` is HTML; drive share
+  links require explicit access/permission types (no defaults — `ANYONE`
+  creates a public link); webhook `begin`/`end` events (1:1 talk lifecycle)
+  now parse as `talk-begin`/`talk-end`.
+
+Agents can also create calendar events inline via the
+`[[calendar_create: …]]` directive (summary/start/end/timezone required;
+bare local timestamps; the full syntax is injected into the agent prompt
+automatically, like `[[mail_send:]]`).
+
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |

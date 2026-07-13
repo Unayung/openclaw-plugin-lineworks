@@ -13,6 +13,7 @@ import {
   type LineWorksInboundMedia,
   type LineWorksInboundMessage,
 } from "./inbound-context.js";
+import { createCalendarEvent } from "./calendar.js";
 import { sendMail } from "./mail.js";
 import { getLineWorksRuntime } from "./runtime.js";
 import { sendMessage, sendText } from "./send.js";
@@ -292,6 +293,7 @@ export async function dispatchLineWorksInboundTurn(params: {
           locations: locationsFromText,
           quickReply: quickReplyFromText,
           mailSends,
+          calendarCreates,
           residualText,
           parseErrors,
         } = extractDirectives(rawText);
@@ -301,11 +303,11 @@ export async function dispatchLineWorksInboundTurn(params: {
         // Execute mail_send directives before composing the outbound reply.
         // Each result becomes a short "✉︎ sent to <recipients>" / "✉︎ failed"
         // note appended after the agent's text so the user sees what landed.
-        const mailResultNotes: string[] = [];
+        const directiveResultNotes: string[] = [];
         for (const mail of mailSends) {
           const fromMailbox = msgWithMedia.senderEmail;
           if (!fromMailbox) {
-            mailResultNotes.push(
+            directiveResultNotes.push(
               `✉︎ mail skipped (need sender email; user.profile.read scope not granted?)`,
             );
             params.log?.warn?.(
@@ -323,14 +325,39 @@ export async function dispatchLineWorksInboundTurn(params: {
               subject: mail.subject,
               body: mail.body,
             });
-            mailResultNotes.push(`✉︎ sent to ${mail.to.join(", ")}`);
+            directiveResultNotes.push(`✉︎ sent to ${mail.to.join(", ")}`);
             params.log?.info?.(
               `LINE WORKS: mail sent from=${fromMailbox} to=${mail.to.join(",")} subject="${mail.subject.slice(0, 60)}"`,
             );
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            mailResultNotes.push(`✉︎ mail send failed: ${msg.slice(0, 100)}`);
+            directiveResultNotes.push(`✉︎ mail send failed: ${msg.slice(0, 100)}`);
             params.log?.error?.(`LINE WORKS: mail send failed: ${msg}`);
+          }
+        }
+
+        // Execute calendar_create directives (per-user OAuth as the sender).
+        for (const cal of calendarCreates) {
+          const res = await createCalendarEvent({
+            account: params.account,
+            userId: params.msg.from,
+            event: {
+              summary: cal.summary,
+              start: { dateTime: cal.start, timeZone: cal.timeZone },
+              end: { dateTime: cal.end, timeZone: cal.timeZone },
+              location: cal.location,
+              attendeeEmails: cal.attendeeEmails,
+              description: cal.description,
+            },
+            log: { warn: (m) => params.log?.warn?.(m) },
+          });
+          if (res.ok) {
+            directiveResultNotes.push(`🗓 event created: ${cal.summary}`);
+            params.log?.info?.(
+              `LINE WORKS: calendar event created for ${params.msg.from}: "${cal.summary.slice(0, 60)}"`,
+            );
+          } else {
+            directiveResultNotes.push(`🗓 calendar create failed: ${res.reason.slice(0, 100)}`);
           }
         }
 
@@ -357,7 +384,7 @@ export async function dispatchLineWorksInboundTurn(params: {
           rawMediaUrls.length === 0 &&
           flex.length === 0 &&
           locations.length === 0 &&
-          mailResultNotes.length === 0
+          directiveResultNotes.length === 0
         ) {
           params.log?.info?.(
             `LINE WORKS: deliver called with empty payload for ${params.msg.from} (skipping send)`,
@@ -368,9 +395,9 @@ export async function dispatchLineWorksInboundTurn(params: {
         // Fold mail result notes into the text the user sees, either appended
         // to the agent's reply (with a blank line before) or as their own
         // message when the agent said nothing.
-        const textWithMailNotes =
-          mailResultNotes.length > 0
-            ? (text ? `${text}\n\n${mailResultNotes.join("\n")}` : mailResultNotes.join("\n"))
+        const textWithDirectiveNotes =
+          directiveResultNotes.length > 0
+            ? (text ? `${text}\n\n${directiveResultNotes.join("\n")}` : directiveResultNotes.join("\n"))
             : text;
 
         // Build an ordered sequence of LINE WORKS messages: media → text →
@@ -429,7 +456,7 @@ export async function dispatchLineWorksInboundTurn(params: {
           }
         }
 
-        if (textWithMailNotes) outbound.push({ type: "text", text: textWithMailNotes });
+        if (textWithDirectiveNotes) outbound.push({ type: "text", text: textWithDirectiveNotes });
         for (const fl of flex) outbound.push(fl);
         for (const loc of locations) outbound.push(loc);
 

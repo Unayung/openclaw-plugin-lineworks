@@ -195,6 +195,42 @@ describe("extractDirectives — mail_send", () => {
   });
 });
 
+describe("extractDirectives — calendar_create", () => {
+  it("parses a well-formed calendar_create block", () => {
+    const r = extractDirectives(
+      `booked!\n\n[[calendar_create:\nsummary: Quarterly sync\nstart: 2026-07-15T14:00\nend: 2026-07-15T15:00:00\ntimezone: Asia/Taipei\nlocation: Room A\nattendees: a@b.com, c@d.com\ndescription:\nAgenda line one.\nLine two.\n]]`,
+    );
+    expect(r.calendarCreates).toHaveLength(1);
+    expect(r.calendarCreates[0]!).toEqual({
+      summary: "Quarterly sync",
+      start: "2026-07-15T14:00:00",
+      end: "2026-07-15T15:00:00",
+      timeZone: "Asia/Taipei",
+      location: "Room A",
+      attendeeEmails: ["a@b.com", "c@d.com"],
+      description: "Agenda line one.\nLine two.",
+    });
+    expect(r.residualText).toBe("booked!");
+    expect(r.parseErrors).toHaveLength(0);
+  });
+
+  it("rejects calendar_create without timezone", () => {
+    const r = extractDirectives(
+      `[[calendar_create:\nsummary: x\nstart: 2026-07-15T14:00:00\nend: 2026-07-15T15:00:00\n]]`,
+    );
+    expect(r.calendarCreates).toHaveLength(0);
+    expect(r.parseErrors[0]!).toMatch(/missing `timezone:`/);
+  });
+
+  it("rejects start/end with a UTC offset", () => {
+    const r = extractDirectives(
+      `[[calendar_create:\nsummary: x\nstart: 2026-07-15T14:00:00+09:00\nend: 2026-07-15T15:00:00\ntimezone: Asia/Tokyo\n]]`,
+    );
+    expect(r.calendarCreates).toHaveLength(0);
+    expect(r.parseErrors[0]!).toMatch(/bare local/);
+  });
+});
+
 describe("extractDirectives — combined", () => {
   it("handles flex + location + quick_replies together", () => {
     const r = extractDirectives(

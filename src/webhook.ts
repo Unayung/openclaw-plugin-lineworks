@@ -70,6 +70,13 @@ export function parseInboundEvent(raw: unknown): LineWorksInboundEvent | undefin
       return { kind: "member-joined", source, members: extractMembers(obj.members), raw, receivedAt };
     case "left":
       return { kind: "member-left", source, members: extractMembers(obj.members), raw, receivedAt };
+    // Verified event names (developers.worksmobile.com/jp/docs/bot-callback-begin,
+    // .../bot-callback-end): fired only for 1:1 talk rooms, when a member starts
+    // or exits the room with the bot.
+    case "begin":
+      return { kind: "talk-begin", source, raw, receivedAt };
+    case "end":
+      return { kind: "talk-end", source, raw, receivedAt };
     case "postback":
       return { kind: "postback", source, content, raw, receivedAt };
     default:

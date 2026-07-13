@@ -28,6 +28,7 @@ import {
   uploadLineWorksAttachment,
 } from "./attachments.js";
 import { getChannelMembers } from "./members.js";
+import { listUsers as listOrgUsers, listGroups as listOrgGroups } from "./org-directory.js";
 import { buildTextOutboundMessages, sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
@@ -245,9 +246,76 @@ export function createLineWorksPlugin(): LineWorksPlugin {
       },
       directory: {
         ...createEmptyChannelDirectoryAdapter(),
-        // Fail closed: getChannelMembers returns null on any API/parse error;
-        // the SDK hook cannot express null, so throw — an un-listable channel
-        // must never look like a real zero-member roster.
+        // Fail closed throughout: the org-directory/members modules return
+        // null on any API/parse error; the SDK hooks cannot express null, so
+        // throw — a failed listing must never look like a real empty result.
+        // listPeers/listGroups need user.read / group.read granted in the
+        // Developer Console and added to channels.lineworks.extraScopes.
+        listPeers: async ({
+          cfg,
+          accountId,
+          query,
+          limit,
+        }: {
+          cfg: OpenClawConfig;
+          accountId?: string | null;
+          query?: string | null;
+          limit?: number | null;
+        }) => {
+          const account = resolveLineWorksAccount(cfg, accountId);
+          const users = await listOrgUsers({ account });
+          if (users === null) {
+            throw new Error(
+              "LINE WORKS: unable to list directory users (user.read scope granted + in extraScopes?)",
+            );
+          }
+          const q = query?.trim().toLowerCase();
+          const filtered = q
+            ? users.filter((u) =>
+                [u.displayName, u.email, u.userId].some((v) => v?.toLowerCase().includes(q)),
+              )
+            : users;
+          const capped =
+            typeof limit === "number" && limit > 0 ? filtered.slice(0, limit) : filtered;
+          return capped.map((u) => ({
+            kind: "user" as const,
+            id: u.userId,
+            name: u.displayName,
+            handle: u.email,
+          }));
+        },
+        listGroups: async ({
+          cfg,
+          accountId,
+          query,
+          limit,
+        }: {
+          cfg: OpenClawConfig;
+          accountId?: string | null;
+          query?: string | null;
+          limit?: number | null;
+        }) => {
+          const account = resolveLineWorksAccount(cfg, accountId);
+          const groups = await listOrgGroups({ account });
+          if (groups === null) {
+            throw new Error(
+              "LINE WORKS: unable to list groups (group.read scope granted + in extraScopes?)",
+            );
+          }
+          const q = query?.trim().toLowerCase();
+          const filtered = q
+            ? groups.filter((g) =>
+                [g.groupName, g.groupId].some((v) => v?.toLowerCase().includes(q)),
+              )
+            : groups;
+          const capped =
+            typeof limit === "number" && limit > 0 ? filtered.slice(0, limit) : filtered;
+          return capped.map((g) => ({
+            kind: "group" as const,
+            id: g.groupId,
+            name: g.groupName,
+          }));
+        },
         listGroupMembers: async ({
           cfg,
           accountId,
@@ -426,6 +494,28 @@ export function createLineWorksPlugin(): LineWorksPlugin {
           "- Local file uploads cap at ~15 MB.",
           "- Flex JSON must be valid; parse failures are logged and dropped.",
           "",
+          "### Calendar create (optional)",
+          "When the sender has granted per-user OAuth with the `calendar`",
+          "scope, you can create an event in THEIR default calendar:",
+          "",
+          "    [[calendar_create:",
+          "    summary: Quarterly sync",
+          "    start: 2026-07-15T14:00:00",
+          "    end: 2026-07-15T15:00:00",
+          "    timezone: Asia/Taipei",
+          "    location: Room A",
+          "    attendees: a@example.com, b@example.com",
+          "    description:",
+          "    Agenda and notes, multi-line, up to the closing brackets.",
+          "    ]]",
+          "",
+          "- summary/start/end/timezone are required; the rest optional.",
+          "- start/end are BARE local timestamps (no UTC offset) — the",
+          "  timezone field carries the zone (IANA name).",
+          "- Only create events the user explicitly asked for. On success",
+          "  you'll see `🗓 event created: …` appended to your reply; on",
+          "  failure `🗓 calendar create failed: …`.",
+          "",
           "### Mail send (optional)",
           "When the channel account has been granted the `mail` scope AND",
           "`SenderEmail` is present in context, you can send mail on behalf",
@@ -595,6 +685,13 @@ export {
 } from "./webhook.js";
 export { sendMessage, sendText } from "./send.js";
 export { getChannelMembers } from "./members.js";
+export { listUsers, listGroups } from "./org-directory.js";
+export {
+  getChannelInfo,
+  registerPersistentMenu,
+  getPersistentMenu,
+  deletePersistentMenu,
+} from "./bot-extras.js";
 export {
   DEFAULT_ACCOUNT_ID,
   listLineWorksAccountIds,

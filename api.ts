@@ -18,6 +18,43 @@ export {
 export { sendMessage, sendText } from "./src/send.js";
 export { getUserProfile, clearDirectoryCache } from "./src/directory.js";
 export { getChannelMembers } from "./src/members.js";
+export { listUsers, listGroups } from "./src/org-directory.js";
+export type { OrgDirectoryUser, OrgDirectoryGroup } from "./src/org-directory.js";
+export {
+  getChannelInfo,
+  registerPersistentMenu,
+  getPersistentMenu,
+  deletePersistentMenu,
+} from "./src/bot-extras.js";
+export type {
+  LineWorksChannelInfo,
+  LineWorksPersistentMenuContent,
+  LineWorksPersistentMenuAction,
+  LineWorksBotExtrasResult,
+} from "./src/bot-extras.js";
+export { createCalendarEvent, listUpcomingEvents } from "./src/calendar.js";
+export type {
+  LineWorksCalendarDateTime,
+  LineWorksCalendarEventInput,
+  LineWorksCalendarEventSummary,
+  LineWorksCreateEventResult,
+} from "./src/calendar.js";
+export { createTask, listTasks } from "./src/tasks.js";
+export type { CreateTaskArgs, CreateTaskResult, LineWorksTaskSummary } from "./src/tasks.js";
+export { uploadDriveFile, listDriveFiles, createDriveShareLink } from "./src/drive.js";
+export type {
+  LineWorksDriveFileSummary,
+  LineWorksUploadDriveFileResult,
+  LineWorksCreateDriveShareLinkResult,
+  LineWorksDriveLinkAccessType,
+  LineWorksDriveLinkPermissionType,
+} from "./src/drive.js";
+export { listBoards, createBoardPost } from "./src/board.js";
+export type {
+  LineWorksBoardSummary,
+  LineWorksCreateBoardPostArgs,
+  LineWorksCreateBoardPostResult,
+} from "./src/board.js";
 export type { LineWorksUserProfile } from "./src/directory.js";
 export { sendMail, listRecentMail, listMailFolders } from "./src/mail.js";
 export type {
