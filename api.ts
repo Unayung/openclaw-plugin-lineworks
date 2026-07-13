@@ -17,6 +17,7 @@ export {
 } from "./src/webhook.js";
 export { sendMessage, sendText } from "./src/send.js";
 export { getUserProfile, clearDirectoryCache } from "./src/directory.js";
+export { getChannelMembers } from "./src/members.js";
 export type { LineWorksUserProfile } from "./src/directory.js";
 export { sendMail, listRecentMail, listMailFolders } from "./src/mail.js";
 export type {

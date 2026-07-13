@@ -27,6 +27,7 @@ import {
   mediaKindForContentType,
   uploadLineWorksAttachment,
 } from "./attachments.js";
+import { getChannelMembers } from "./members.js";
 import { buildTextOutboundMessages, sendMessage, sendText } from "./send.js";
 import { lineWorksSetupAdapter, lineWorksSetupWizard } from "./setup-surface.js";
 import type { ResolvedLineWorksAccount } from "./types.js";
@@ -92,6 +93,9 @@ type LineWorksPlugin = Omit<
     self?: NonNullable<ChannelPlugin<ResolvedLineWorksAccount>["directory"]>["self"];
     listPeers?: NonNullable<ChannelPlugin<ResolvedLineWorksAccount>["directory"]>["listPeers"];
     listGroups?: NonNullable<ChannelPlugin<ResolvedLineWorksAccount>["directory"]>["listGroups"];
+    listGroupMembers?: NonNullable<
+      ChannelPlugin<ResolvedLineWorksAccount>["directory"]
+    >["listGroupMembers"];
   };
   outbound: {
     deliveryMode: "gateway";
@@ -239,7 +243,32 @@ export function createLineWorksPlugin(): LineWorksPlugin {
           hint: "user:<userId> | channel:<channelId>",
         },
       },
-      directory: createEmptyChannelDirectoryAdapter(),
+      directory: {
+        ...createEmptyChannelDirectoryAdapter(),
+        // Fail closed: getChannelMembers returns null on any API/parse error;
+        // the SDK hook cannot express null, so throw — an un-listable channel
+        // must never look like a real zero-member roster.
+        listGroupMembers: async ({
+          cfg,
+          accountId,
+          groupId,
+          limit,
+        }: {
+          cfg: OpenClawConfig;
+          accountId?: string | null;
+          groupId: string;
+          limit?: number | null;
+        }) => {
+          const account = resolveLineWorksAccount(cfg, accountId);
+          const members = await getChannelMembers({ account, channelId: groupId });
+          if (members === null) {
+            throw new Error(`LINE WORKS: unable to list members of channel ${groupId}`);
+          }
+          const capped =
+            typeof limit === "number" && limit > 0 ? members.slice(0, limit) : members;
+          return capped.map((id) => ({ kind: "user" as const, id }));
+        },
+      },
       gateway: {
         startAccount: async (ctx: LineWorksGatewayContext) => {
           const { cfg, accountId, log, abortSignal } = ctx;
@@ -565,6 +594,7 @@ export {
   parseInboundEvent,
 } from "./webhook.js";
 export { sendMessage, sendText } from "./send.js";
+export { getChannelMembers } from "./members.js";
 export {
   DEFAULT_ACCOUNT_ID,
   listLineWorksAccountIds,

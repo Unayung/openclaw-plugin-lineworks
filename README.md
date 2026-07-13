@@ -358,6 +358,30 @@ into the agent's own system prompt instead.
 
 ---
 
+## Channel member listing (verified API)
+
+`getChannelMembers({ account, channelId })` (exported from `api.ts`, wired
+into the directory adapter's `listGroupMembers`) lists the userIds of a talk
+room the bot participates in. Verified against
+[bot-channel-member-list](https://developers.worksmobile.com/jp/docs/bot-channel-member-list):
+
+- **Endpoint**: `GET https://www.worksapis.com/v1.0/bots/{botId}/channels/{channelId}/members`
+- **Scope**: any of `bot.message` / `bot` / `bot.read` — the base token scopes
+  (`bot bot.read`, see `src/auth.ts`) already cover it; no extra Developer
+  Console grant beyond the Bot scope you set up in Quick start step 3.
+- **Pagination**: `?count=1..100` (default 50) + `?cursor=…`; the response's
+  `responseMetaData.nextCursor` is the next page's cursor (absent/empty when
+  done). The plugin fetches `count=100` pages until the cursor runs out.
+- **Response shape**: `{ "members": ["<userId>", …], "responseMetaData": { "nextCursor": "…" } }`
+  — members are **bare userId strings** (the same UUIDs as webhook
+  `source.userId`), not objects.
+- **Precondition**: the bot must be a member of the channel (it can only list
+  rooms it participates in).
+- **Fail-closed contract**: any error (401/403/404, parse failure, partial
+  pagination) returns `null` — never an empty array — so a caller can
+  distinguish "cannot list" from "really has no members". The SDK
+  `listGroupMembers` hook throws in that case.
+
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
