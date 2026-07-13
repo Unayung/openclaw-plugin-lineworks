@@ -64,15 +64,23 @@ export function parseInboundEvent(raw: unknown): LineWorksInboundEvent | undefin
       return { kind: "bot-joined", source, raw, receivedAt };
     case "leave":
       return { kind: "bot-left", source, raw, receivedAt };
-    case "memberJoined":
-      return { kind: "member-joined", source, raw, receivedAt };
-    case "memberLeft":
-      return { kind: "member-left", source, raw, receivedAt };
+    // Verified event names (developers.worksmobile.com/jp/docs/bot-callback-joined):
+    // members who joined/left arrive in a top-level `members` array, not in `source`.
+    case "joined":
+      return { kind: "member-joined", source, members: extractMembers(obj.members), raw, receivedAt };
+    case "left":
+      return { kind: "member-left", source, members: extractMembers(obj.members), raw, receivedAt };
     case "postback":
       return { kind: "postback", source, content, raw, receivedAt };
     default:
       return { kind: "unknown", source, raw, receivedAt };
   }
+}
+
+function extractMembers(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const members = raw.filter((m): m is string => typeof m === "string");
+  return members.length > 0 ? members : undefined;
 }
 
 function extractSource(raw: unknown): LineWorksInboundSource | undefined {

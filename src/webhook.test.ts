@@ -120,12 +120,20 @@ describe("parseInboundEvent", () => {
     expect(
       parseInboundEvent({ type: "leave", source: { channelId: "c-1" } })?.kind,
     ).toBe("bot-left");
-    expect(
-      parseInboundEvent({ type: "memberJoined", source: { channelId: "c-1" } })?.kind,
-    ).toBe("member-joined");
-    expect(
-      parseInboundEvent({ type: "memberLeft", source: { channelId: "c-1" } })?.kind,
-    ).toBe("member-left");
+    const joined = parseInboundEvent({
+      type: "joined",
+      source: { channelId: "c-1", domainId: 400 },
+      members: ["u-1", "u-2"],
+    });
+    expect(joined?.kind).toBe("member-joined");
+    expect(joined?.members).toEqual(["u-1", "u-2"]);
+    const left = parseInboundEvent({
+      type: "left",
+      source: { channelId: "c-1" },
+      members: ["u-1"],
+    });
+    expect(left?.kind).toBe("member-left");
+    expect(left?.members).toEqual(["u-1"]);
   });
 
   it("returns undefined for malformed events", () => {

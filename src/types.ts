@@ -207,6 +207,8 @@ export interface LineWorksInboundEvent {
   kind: LineWorksInboundKind;
   source: LineWorksInboundSource;
   content?: LineWorksInboundContent;
+  /** userIds who joined/left the room; only on "member-joined" / "member-left". */
+  members?: string[];
   raw: unknown;
   receivedAt: number;
 }
