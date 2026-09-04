@@ -1,4 +1,4 @@
-import { z } from "openclaw/plugin-sdk/zod";
+import { z } from "zod";
 import { buildChannelConfigSchema } from "openclaw/plugin-sdk/channel-config-schema";
 
 const DmPolicySchema = z.enum(["open", "allowlist", "pairing", "disabled"]);

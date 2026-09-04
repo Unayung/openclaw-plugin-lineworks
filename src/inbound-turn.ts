@@ -1,3 +1,4 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk/account-resolution";
 import {
   downloadHttpsToTempFile,
   downloadLineWorksAttachment,
@@ -139,7 +140,11 @@ export async function dispatchLineWorksInboundTurn(params: {
   log?: LineWorksChannelLog;
 }): Promise<null> {
   const rt = getLineWorksRuntime();
-  const currentCfg = rt.config.loadConfig();
+  // openclaw >=2026.7 exposes the plugin runtime config as `current()`; the
+  // older `loadConfig()` accessor no longer exists. `current()` is typed as a
+  // deeply readonly snapshot, so widen it the way the bundled channel plugins
+  // do (see extensions/synology-chat/src/inbound-event.ts upstream).
+  const currentCfg = rt.config.current() as OpenClawConfig;
   const route = rt.channel.routing.resolveAgentRoute({
     cfg: currentCfg,
     channel: CHANNEL_ID,

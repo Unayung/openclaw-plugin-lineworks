@@ -12,6 +12,86 @@
       "LINEWORKS_DOMAIN_ID"
     ]
   },
+  "channelConfigs": {
+    "lineworks": {
+      "label": "LINE WORKS",
+      "description": "LINE WORKS (Works Mobile) enterprise bot channel.",
+      "schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "name": { "type": "string" },
+          "clientId": { "type": "string" },
+          "clientSecret": { "type": "string" },
+          "serviceAccount": { "type": "string" },
+          "privateKey": { "type": "string" },
+          "privateKeyFile": { "type": "string" },
+          "botId": { "type": "string" },
+          "botSecret": { "type": "string" },
+          "domainId": { "type": "string" },
+          "dmPolicy": {
+            "type": "string",
+            "enum": ["open", "allowlist", "pairing", "disabled"],
+            "default": "pairing"
+          },
+          "groupPolicy": {
+            "type": "string",
+            "enum": ["open", "allowlist", "disabled"],
+            "default": "allowlist"
+          },
+          "allowFrom": {
+            "type": "array",
+            "items": { "anyOf": [{ "type": "string" }, { "type": "number" }] }
+          },
+          "groupAllowFrom": {
+            "type": "array",
+            "items": { "anyOf": [{ "type": "string" }, { "type": "number" }] }
+          },
+          "requireMention": { "type": "boolean" },
+          "groupRequireMention": { "type": "boolean", "default": false },
+          "botMentionHandle": { "type": "string" },
+          "webhookPath": { "type": "string" },
+          "publicBaseUrl": { "type": "string" },
+          "channels": { "type": "object", "additionalProperties": true },
+          "accounts": { "type": "object", "additionalProperties": true },
+          "defaultAccount": { "type": "string" }
+        }
+      },
+      "uiHints": {
+        "clientId": { "label": "Client ID", "help": "LINE WORKS Developer Console app client ID." },
+        "clientSecret": { "label": "Client secret", "sensitive": true },
+        "serviceAccount": {
+          "label": "Service account",
+          "help": "Service account id, e.g. abcd.serviceaccount@example.",
+          "sensitive": true
+        },
+        "privateKey": {
+          "label": "Private key (PEM)",
+          "help": "Service account private key. Use privateKeyFile to load it from disk instead.",
+          "sensitive": true
+        },
+        "privateKeyFile": { "label": "Private key file", "advanced": true },
+        "botId": { "label": "Bot ID" },
+        "botSecret": {
+          "label": "Bot secret",
+          "help": "Used to verify the X-WORKS-Signature header on inbound webhooks.",
+          "sensitive": true
+        },
+        "domainId": { "label": "Domain ID", "advanced": true },
+        "botMentionHandle": {
+          "label": "Bot mention handle",
+          "help": "Handle matched against @mentions in group chats, e.g. Racco."
+        },
+        "webhookPath": { "label": "Webhook path", "advanced": true, "placeholder": "/lineworks/webhook" },
+        "publicBaseUrl": {
+          "label": "Public base URL",
+          "help": "Required for the OAuth start/callback routes.",
+          "advanced": true
+        }
+      }
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

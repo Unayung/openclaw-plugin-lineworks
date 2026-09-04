@@ -6,6 +6,7 @@ import {
   readRequestBodyWithLimit,
   requestBodyErrorToText,
 } from "openclaw/plugin-sdk/webhook-ingress";
+import { runDetachedWebhookWork } from "openclaw/plugin-sdk/webhook-request-guards";
 import {
   isSenderAllowedByUsers,
   resolveLineWorksChannelConfig,
@@ -300,7 +301,17 @@ export function createLineWorksWebhookHandler(deps: LineWorksWebhookHandlerDeps)
       respondNoContent(res);
 
       // Fire-and-forget delivery; errors are logged inside deliver.
-      void deliver(msg).catch((err) => {
+      //
+      // The agent turn must NOT inherit this request's gateway work
+      // admission. `requestLifecycle.release()` runs in the `finally` below,
+      // right after this call schedules the async chain, and openclaw >=2026.7
+      // refuses queue enqueues from a chain whose admission root is already
+      // released ("GatewayDrainingError: Gateway is draining; new tasks are
+      // not accepted") — which silently swallowed every reply. Reserving an
+      // independent root here, synchronously while the request is still
+      // admitted, keeps the detached turn accepted and lets a restart drain
+      // wait for it.
+      void runDetachedWebhookWork(() => deliver(msg)).catch((err) => {
         log?.error?.(`lineworks: deliver failed: ${String(err)}`);
       });
     } finally {

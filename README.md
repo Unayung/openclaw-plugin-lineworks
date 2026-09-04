@@ -30,6 +30,10 @@ file, Flex cards, pinned locations, and tap-reply buttons.
 
 ### 1. Prerequisites
 
+- **openclaw 2026.7.2 or newer.** 0.9.1 dropped support for older hosts: it
+  needs `PluginRuntime.config.current()` and the plugin SDK's
+  `runDetachedWebhookWork()`, neither of which exists in 2026.4/2026.5. Stay on
+  0.9.0 if you are pinned to an older gateway.
 - An **openclaw gateway** already running and reachable on the public
   internet. See [openclaw remote-access patterns](https://docs.openclaw.ai/gateway/remote)
   — VPS + reverse proxy, Tailscale Funnel, or Cloudflare Tunnel all work.
