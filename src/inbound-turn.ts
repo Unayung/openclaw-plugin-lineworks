@@ -462,6 +462,8 @@ export async function dispatchLineWorksInboundTurn(params: {
 
         if (quickReply) attachQuickReplyToLast(outbound, quickReply);
 
+        const failures: string[] = [];
+        let delivered = 0;
         for (const message of outbound) {
           const label =
             message.type === "text"
@@ -506,17 +508,33 @@ export async function dispatchLineWorksInboundTurn(params: {
             } else {
               await sendMessage({ account: params.account, target: replyTarget, message });
             }
+            delivered++;
             params.log?.info?.(`LINE WORKS: ${label} delivered to ${targetDesc}`);
           } catch (err) {
             params.log?.error?.(
               `LINE WORKS: failed to deliver ${label} to ${targetDesc}: ${String(err)}`,
             );
+            failures.push(`${label}: ${String(err)}`);
           }
         }
 
         if (ackSent && outbound.length > 0) {
           params.log?.info?.(
             `LINE WORKS: real reply delivered after thinking-ack was sent (user saw both)`,
+          );
+        }
+
+        // Every message was attempted; now surface the failures instead of only
+        // logging them. LINE WORKS never redelivers (the webhook already
+        // answered 204), so this throw is the only signal the embedding app
+        // gets that part of the reply is missing. `sentBeforeError` tells core
+        // the user did see some of it (isVisiblePartialDeliveryError).
+        if (failures.length > 0) {
+          throw Object.assign(
+            new Error(
+              `LINE WORKS: ${failures.length}/${outbound.length} message(s) failed to deliver to ${targetDesc}: ${failures.join("; ")}`,
+            ),
+            { sentBeforeError: delivered > 0 },
           );
         }
       },

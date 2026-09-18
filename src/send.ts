@@ -1,3 +1,4 @@
+import { createRateLimitRetryRunner } from "openclaw/plugin-sdk/retry-runtime";
 import { getAccessToken } from "./auth.js";
 import { chunkText, LINEWORKS_TEXT_CHUNK_LIMIT } from "./chunk-text.js";
 import { extractDirectives } from "./directives.js";
@@ -9,6 +10,51 @@ import type {
 } from "./types.js";
 
 const LINEWORKS_API_BASE = "https://www.worksapis.com/v1.0";
+
+// LINE WORKS' send API has no idempotency key, so retrying a failure that may
+// already have been delivered (5xx, ECONNRESET, timeout — the request can reach
+// the API before the connection breaks) would post the message twice. Retry only
+// failures that provably never reached the API: HTTP 429, and pre-connect network
+// errors. Same split as the Telegram channel plugin's PRE_CONNECT_ERROR_CODES.
+const PRE_CONNECT_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+]);
+
+function errorCode(err: unknown): string | undefined {
+  // fetch wraps the OS error in `cause`, so check both levels.
+  for (const candidate of [err, (err as { cause?: unknown })?.cause]) {
+    const code = (candidate as { code?: unknown })?.code;
+    if (typeof code === "string") return code;
+  }
+  return undefined;
+}
+
+function isRetryableSendError(err: unknown): boolean {
+  if ((err as { status?: unknown })?.status === 429) return true;
+  const code = errorCode(err);
+  return code !== undefined && PRE_CONNECT_ERROR_CODES.has(code);
+}
+
+// ponytail: seconds form only — LINE WORKS sends an integer. The HTTP-date form
+// falls back to the exponential backoff.
+function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header.trim());
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+}
+
+const runSendWithRetry = createRateLimitRetryRunner({
+  defaults: { attempts: 3, minDelayMs: 400, maxDelayMs: 30_000, jitter: 0.1 },
+  logLabel: "lineworks",
+  verbose: true,
+  shouldRetry: isRetryableSendError,
+  retryAfterMs: (err: unknown) => (err as { retryAfterMs?: number })?.retryAfterMs,
+});
 
 /**
  * Turn agent reply text into the ordered LINE WORKS messages to send, processing
@@ -85,22 +131,30 @@ export async function sendMessage(args: {
   message: LineWorksOutboundMessage;
 }): Promise<void> {
   const { account, target, message } = args;
-  const access = await getAccessToken(account);
   const url = buildSendUrl(account, target);
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `${access.tokenType} ${access.token}`,
-    },
-    body: JSON.stringify({ content: message }),
-  });
+  await runSendWithRetry(async () => {
+    // Inside the retry so an attempt after a long backoff gets a fresh token.
+    const access = await getAccessToken(account);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `${access.tokenType} ${access.token}`,
+      },
+      body: JSON.stringify({ content: message }),
+    });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`LINE WORKS send failed: ${res.status} ${text}`);
-  }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      // Carry the status and Retry-After so shouldRetry/retryAfterMs can read
+      // them — stringifying them into the message alone loses both.
+      throw Object.assign(new Error(`LINE WORKS send failed: ${res.status} ${text}`), {
+        status: res.status,
+        retryAfterMs: parseRetryAfterMs(res.headers.get("retry-after")),
+      });
+    }
+  }, "send");
 }
 
 // `sticker:"<packageId>:<stickerId>"` (quotes optional) — a shorthand for

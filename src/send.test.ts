@@ -107,6 +107,56 @@ describe("sendMessage", () => {
     });
   });
 
+  it("retries a 429 once the Retry-After delay passes, then succeeds", async () => {
+    const account = await setupAccount();
+    let sendAttempts = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      if (url.toString().includes("/oauth2/")) {
+        return new Response(
+          JSON.stringify({ access_token: "tkn", token_type: "Bearer", expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      sendAttempts++;
+      if (sendAttempts === 1) {
+        return new Response("rate limited", { status: 429, headers: { "retry-after": "0" } });
+      }
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sendMessage({
+      account,
+      target: { type: "user", userId: "user-42" },
+      message: { type: "text", text: "hi" },
+    });
+
+    expect(sendAttempts).toBe(2);
+  });
+
+  it("does not retry a 500 — the message may already have been delivered", async () => {
+    const account = await setupAccount();
+    let sendAttempts = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      if (url.toString().includes("/oauth2/")) {
+        return new Response(
+          JSON.stringify({ access_token: "tkn", token_type: "Bearer", expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      sendAttempts++;
+      return new Response("boom", { status: 500 });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      sendMessage({
+        account,
+        target: { type: "user", userId: "user-42" },
+        message: { type: "text", text: "hi" },
+      }),
+    ).rejects.toThrow("LINE WORKS send failed: 500");
+    expect(sendAttempts).toBe(1);
+  });
+
   it("POSTs to the channel messages endpoint for channel targets", async () => {
     const account = await setupAccount();
     const { calls, mock } = mockFetchSequence();
