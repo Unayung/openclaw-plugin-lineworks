@@ -524,11 +524,10 @@ export async function dispatchLineWorksInboundTurn(params: {
           );
         }
 
-        // Every message was attempted; now surface the failures instead of only
-        // logging them. LINE WORKS never redelivers (the webhook already
-        // answered 204), so this throw is the only signal the embedding app
-        // gets that part of the reply is missing. `sentBeforeError` tells core
-        // the user did see some of it (isVisiblePartialDeliveryError).
+        // Every message was attempted; now report the failures as one error.
+        // The reply dispatcher catches anything `deliver` throws and hands it
+        // only to `onError` below — it does not propagate further.
+        // `sentBeforeError` marks that the user saw some of the reply.
         if (failures.length > 0) {
           throw Object.assign(
             new Error(
@@ -540,6 +539,11 @@ export async function dispatchLineWorksInboundTurn(params: {
       },
       onReplyStart: () => {
         params.log?.info?.(`Agent reply started for ${params.msg.from}`);
+      },
+      // LINE WORKS never redelivers (the webhook already answered 204), so this
+      // line is the only record that a reply arrived incomplete.
+      onError: (err: unknown) => {
+        params.log?.error?.(`LINE WORKS: reply incomplete: ${String(err)}`);
       },
     },
   });

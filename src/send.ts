@@ -25,24 +25,43 @@ const PRE_CONNECT_ERROR_CODES = new Set([
   "EHOSTUNREACH",
 ]);
 
-function errorCode(err: unknown): string | undefined {
-  // fetch wraps the OS error in `cause`, so check both levels.
-  for (const candidate of [err, (err as { cause?: unknown })?.cause]) {
-    const code = (candidate as { code?: unknown })?.code;
-    if (typeof code === "string") return code;
-  }
-  return undefined;
+// The code alone is not proof: EHOSTUNREACH/ENETUNREACH can also hit a reused
+// keep-alive socket after the request was written. Require the syscall too.
+const PRE_CONNECT_SYSCALLS = new Set(["connect", "getaddrinfo"]);
+
+// Longest LINE WORKS 429 window we wait out. The limit is per minute, so a
+// reset can be up to 60s away; holding a reply that long is worse than failing.
+const RATE_LIMIT_MAX_WAIT_MS = 10_000;
+
+function isPreConnectError(err: unknown): boolean {
+  // fetch wraps the OS error in `cause`; happy-eyeballs wraps one per address
+  // in an AggregateError whose own `code` has no `syscall`, so look inside.
+  const cause = (err as { cause?: unknown })?.cause;
+  const inner = (cause as { errors?: unknown })?.errors;
+  const candidates = [err, cause, ...(Array.isArray(inner) ? inner : [])];
+  return candidates.some((c) => {
+    const { code, syscall } = (c ?? {}) as { code?: unknown; syscall?: unknown };
+    return (
+      typeof code === "string" &&
+      PRE_CONNECT_ERROR_CODES.has(code) &&
+      typeof syscall === "string" &&
+      PRE_CONNECT_SYSCALLS.has(syscall)
+    );
+  });
 }
 
 function isRetryableSendError(err: unknown): boolean {
-  if ((err as { status?: unknown })?.status === 429) return true;
-  const code = errorCode(err);
-  return code !== undefined && PRE_CONNECT_ERROR_CODES.has(code);
+  const { status, retryAfterMs } = (err ?? {}) as { status?: unknown; retryAfterMs?: number };
+  if (status === 429) return (retryAfterMs ?? 0) <= RATE_LIMIT_MAX_WAIT_MS;
+  return isPreConnectError(err);
 }
 
-// ponytail: seconds form only — LINE WORKS sends an integer. The HTTP-date form
-// falls back to the exponential backoff.
-function parseRetryAfterMs(header: string | null): number | undefined {
+// LINE WORKS does not send Retry-After; its 429 carries RateLimit-Reset
+// (seconds until the per-minute window resets). Read either.
+// ponytail: seconds form only — the HTTP-date Retry-After form falls back to
+// the exponential backoff.
+function parseRetryAfterMs(headers: Headers): number | undefined {
+  const header = headers.get("retry-after") ?? headers.get("ratelimit-reset");
   if (!header) return undefined;
   const seconds = Number(header.trim());
   return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
@@ -147,11 +166,11 @@ export async function sendMessage(args: {
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      // Carry the status and Retry-After so shouldRetry/retryAfterMs can read
+      // Carry the status and retry hint so shouldRetry/retryAfterMs can read
       // them — stringifying them into the message alone loses both.
       throw Object.assign(new Error(`LINE WORKS send failed: ${res.status} ${text}`), {
         status: res.status,
-        retryAfterMs: parseRetryAfterMs(res.headers.get("retry-after")),
+        retryAfterMs: parseRetryAfterMs(res.headers),
       });
     }
   }, "send");

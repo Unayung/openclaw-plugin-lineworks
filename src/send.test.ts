@@ -157,6 +157,67 @@ describe("sendMessage", () => {
     expect(sendAttempts).toBe(1);
   });
 
+  // LINE WORKS sends RateLimit-Reset (seconds), never Retry-After.
+  async function countSendAttempts(fail: (attempt: number) => Response | Error) {
+    const account = await setupAccount();
+    let sendAttempts = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      if (url.toString().includes("/oauth2/")) {
+        return new Response(
+          JSON.stringify({ access_token: "tkn", token_type: "Bearer", expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      sendAttempts++;
+      const outcome = sendAttempts === 1 ? fail(sendAttempts) : new Response("{}", { status: 200 });
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    }) as unknown as typeof fetch;
+    const result = await sendMessage({
+      account,
+      target: { type: "user", userId: "user-42" },
+      message: { type: "text", text: "hi" },
+    }).catch((err: unknown) => err);
+    return { sendAttempts, result };
+  }
+
+  function fetchFailed(cause: unknown): Error {
+    return Object.assign(new TypeError("fetch failed"), { cause });
+  }
+
+  it("retries a LINE WORKS 429 using RateLimit-Reset when Retry-After is absent", async () => {
+    const { sendAttempts, result } = await countSendAttempts(
+      () => new Response("rate limited", { status: 429, headers: { "ratelimit-reset": "0" } }),
+    );
+    expect(result).toBeUndefined();
+    expect(sendAttempts).toBe(2);
+  });
+
+  it("gives up on a 429 whose reset is too far away, keeping the status", async () => {
+    const { sendAttempts, result } = await countSendAttempts(
+      () => new Response("rate limited", { status: 429, headers: { "ratelimit-reset": "30" } }),
+    );
+    expect((result as { status?: number }).status).toBe(429);
+    expect(sendAttempts).toBe(1);
+  });
+
+  it("retries ECONNREFUSED wrapped in a happy-eyeballs AggregateError", async () => {
+    const refused = { code: "ECONNREFUSED", syscall: "connect" };
+    const { sendAttempts, result } = await countSendAttempts(() =>
+      fetchFailed(Object.assign(new AggregateError([refused, refused]), { code: "ECONNREFUSED" })),
+    );
+    expect(result).toBeUndefined();
+    expect(sendAttempts).toBe(2);
+  });
+
+  it("does not retry EHOSTUNREACH on an open socket — the request may have been written", async () => {
+    const { sendAttempts, result } = await countSendAttempts(() =>
+      fetchFailed(Object.assign(new Error("write EHOSTUNREACH"), { code: "EHOSTUNREACH", syscall: "write" })),
+    );
+    expect(result).toBeInstanceOf(Error);
+    expect(sendAttempts).toBe(1);
+  });
+
   it("POSTs to the channel messages endpoint for channel targets", async () => {
     const account = await setupAccount();
     const { calls, mock } = mockFetchSequence();
