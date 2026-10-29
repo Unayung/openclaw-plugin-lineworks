@@ -29,6 +29,7 @@ function baseAccount(overrides: Partial<ResolvedLineWorksAccount> = {}): Resolve
     channels: {},
     extraScopes: [],
     senderProfileEnrichment: true,
+    senderProfileEmail: true,
     mailPreFetchEnabled: false,
     mailPreFetchCount: 10,
     publicBaseUrl: undefined,

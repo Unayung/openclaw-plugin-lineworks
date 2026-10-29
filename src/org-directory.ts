@@ -106,7 +106,10 @@ export async function listUsers(args: {
         const raw = entry as Record<string, unknown>;
         users.push({
           userId: raw["userId"] as string,
-          email: typeof raw["email"] === "string" ? (raw["email"] as string) : undefined,
+          email:
+            account.senderProfileEmail && typeof raw["email"] === "string"
+              ? (raw["email"] as string)
+              : undefined,
           displayName: displayNameFromUserName(raw),
         });
       }

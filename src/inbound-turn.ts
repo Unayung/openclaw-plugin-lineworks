@@ -175,13 +175,11 @@ export async function dispatchLineWorksInboundTurn(params: {
     }
   }
 
-  // Best-effort directory lookup to attach email/name/department to context.
+  // Best-effort directory lookup to attach name (and email, if enabled) to context.
   // Failures (missing scope, 401/403, network) are logged and treated as null
   // so the agent still gets the message — just without the enriched profile.
   let senderEmail: string | undefined;
   let senderFullName: string | undefined;
-  let senderDepartment: string | undefined;
-  let senderTitle: string | undefined;
   if (params.account.senderProfileEnrichment && params.msg.from) {
     try {
       const profile = await getUserProfile({
@@ -192,8 +190,6 @@ export async function dispatchLineWorksInboundTurn(params: {
       if (profile) {
         senderEmail = profile.email;
         senderFullName = profile.displayName || profile.userName;
-        senderDepartment = profile.department;
-        senderTitle = profile.position;
         params.log?.info?.(
           `LINE WORKS: resolved sender ${params.msg.from} → ${profile.email ?? "?"} (${senderFullName ?? "?"})`,
         );
@@ -216,8 +212,6 @@ export async function dispatchLineWorksInboundTurn(params: {
     media: media.length ? media : undefined,
     senderEmail,
     senderFullName,
-    senderDepartment,
-    senderTitle,
   };
 
   const msgCtx = buildLineWorksInboundContext({

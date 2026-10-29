@@ -158,6 +158,7 @@ export function resolveLineWorksAccount(
     channels: normalizeChannels(merged.channels),
     extraScopes: normalizeScopes(merged.extraScopes),
     senderProfileEnrichment: merged.senderProfileEnrichment ?? true,
+    senderProfileEmail: merged.senderProfileEmail ?? true,
     mailPreFetchEnabled: merged.mailPreFetch?.enabled ?? false,
     mailPreFetchCount: Math.min(50, Math.max(1, merged.mailPreFetch?.count ?? 10)),
     publicBaseUrl: merged.publicBaseUrl?.trim().replace(/\/+$/, "") || undefined,

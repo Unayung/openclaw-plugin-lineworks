@@ -83,11 +83,19 @@ interface LineWorksAccountBaseConfig {
    */
   extraScopes?: string[];
   /**
-   * Enrich inbound context with the sender's profile (email, display name,
-   * department) via the Directory API. Requires `user.profile.read` or
-   * `user.email.read` scope on the app. Defaults to true.
+   * Enrich inbound context with the sender's profile (display name and,
+   * unless `senderProfileEmail` is false, email) via the Directory API.
+   * Requires `user.profile.read` or `user.email.read` scope on the app.
+   * Defaults to true.
    */
   senderProfileEnrichment?: boolean;
+  /**
+   * Read the sender's email from the Directory API (used by mail_send and
+   * directory peer handles). Set to false to avoid reading email at all
+   * (data minimization); mail features that need the sender's email are then
+   * skipped. Defaults to true.
+   */
+  senderProfileEmail?: boolean;
   /**
    * When true and the inbound message matches a mail-check intent (e.g.
    * "查看我的信箱", "check my mail"), pre-fetch the sender's recent mail via
@@ -183,6 +191,7 @@ export interface ResolvedLineWorksAccount {
   channels: Record<string, ResolvedLineWorksChannelEntry>;
   extraScopes: string[];
   senderProfileEnrichment: boolean;
+  senderProfileEmail: boolean;
   mailPreFetchEnabled: boolean;
   mailPreFetchCount: number;
   publicBaseUrl: string | undefined;

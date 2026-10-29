@@ -26,6 +26,7 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     channels: {},
     extraScopes: [],
     senderProfileEnrichment: true,
+    senderProfileEmail: true,
     mailPreFetchEnabled: false,
     mailPreFetchCount: 10,
     publicBaseUrl: undefined,
@@ -122,6 +123,22 @@ describe("listUsers", () => {
     expect(req).toBeDefined();
     expect(req!.url).toBe("https://www.worksapis.com/v1.0/users?count=100");
     expect(req!.headers.authorization).toBe("Bearer tkn");
+  });
+
+  it("omits email when senderProfileEmail is false", async () => {
+    const account = { ...(await setupAccount()), senderProfileEmail: false };
+    const { mock } = mockFetchSequence([
+      usersPage([
+        { userId: "u-1", email: "u1@example.com", userName: { firstName: "太郎", lastName: "ワークス" } },
+      ]),
+    ]);
+    globalThis.fetch = mock;
+
+    const users = await listUsers({ account });
+
+    expect(users).toHaveLength(1);
+    expect(users![0]!.email).toBeUndefined();
+    expect(users![0]!.displayName).toBe("ワークス太郎");
   });
 
   it("follows nextCursor across pages and concatenates users", async () => {

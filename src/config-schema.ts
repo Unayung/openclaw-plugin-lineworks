@@ -55,6 +55,7 @@ const LineWorksCommonConfigSchema = z.object({
   botMentionHandle: z.string().optional(),
   extraScopes: z.array(z.string()).optional(),
   senderProfileEnrichment: z.boolean().optional().default(true),
+  senderProfileEmail: z.boolean().optional().default(true),
   mailPreFetch: z
     .object({
       enabled: z.boolean().optional(),
