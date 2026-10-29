@@ -5,18 +5,17 @@ const LINEWORKS_API_BASE = "https://www.worksapis.com/v1.0";
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 
 /**
- * Subset of the LINE WORKS user profile we surface to the agent. The API
- * returns much more (avatar, phone, telephone, birthday, externalKey, …);
- * only the fields that are useful as agent context are extracted here.
+ * Minimal subset of the LINE WORKS user profile we read: userId, name
+ * (userName / displayName) and, optionally, email. The API returns much more
+ * (organizations, position, nickname, avatar, phone, birthday, …); by design
+ * (data minimization) none of that is extracted. Email is only extracted when
+ * `account.senderProfileEmail` is true.
  */
 export interface LineWorksUserProfile {
   userId: string;
   email?: string;
   userName?: string;
   displayName?: string;
-  nickName?: string;
-  department?: string;
-  position?: string;
 }
 
 type CacheEntry = {
@@ -30,7 +29,11 @@ function cacheKey(account: ResolvedLineWorksAccount, userId: string): string {
   return `${account.accountId}:${userId}`;
 }
 
-function extractProfile(userId: string, raw: Record<string, unknown>): LineWorksUserProfile {
+function extractProfile(
+  userId: string,
+  raw: Record<string, unknown>,
+  includeEmail: boolean,
+): LineWorksUserProfile {
   const userName = raw["userName"];
   const firstName =
     typeof userName === "object" && userName !== null
@@ -49,37 +52,21 @@ function extractProfile(userId: string, raw: Record<string, unknown>): LineWorks
           ? lastName
           : undefined;
 
-  const orgs = raw["organizations"];
-  let department: string | undefined;
-  let position: string | undefined;
-  if (Array.isArray(orgs) && orgs.length > 0) {
-    const first = orgs[0] as Record<string, unknown>;
-    const deptObj = first?.["orgUnits"];
-    if (Array.isArray(deptObj) && deptObj.length > 0) {
-      const u = deptObj[0] as Record<string, unknown>;
-      if (typeof u?.["orgUnitName"] === "string") department = u["orgUnitName"] as string;
-    }
-    if (typeof first?.["primary"] === "boolean" && typeof first?.["name"] === "string" && !department) {
-      department = first["name"] as string;
-    }
-    if (typeof first?.["position"] === "string") position = first["position"] as string;
-  }
-
   return {
     userId,
-    email: typeof raw["email"] === "string" ? (raw["email"] as string) : undefined,
+    email:
+      includeEmail && typeof raw["email"] === "string" ? (raw["email"] as string) : undefined,
     userName: fullName,
     displayName: typeof raw["displayName"] === "string" ? (raw["displayName"] as string) : fullName,
-    nickName: typeof raw["nickName"] === "string" ? (raw["nickName"] as string) : undefined,
-    department,
-    position,
   };
 }
 
 /**
  * Resolve a LINE WORKS userId (the UUID that shows up in webhook
- * `source.userId`) to a profile including email, display name, department,
- * and position.
+ * `source.userId`) to a minimal profile: userId, name
+ * (userName / displayName) and, when `account.senderProfileEmail` is true,
+ * email. Department, position, nickname and other organization data are
+ * intentionally never read (data minimization).
  *
  * Requires the bot app to have `user.profile.read` (or `user.email.read` for
  * email-only). Missing scope → 401/403 → we log-and-null so the caller can
@@ -122,7 +109,7 @@ export async function getUserProfile(args: {
   }
 
   const raw = (await res.json()) as Record<string, unknown>;
-  const profile = extractProfile(userId, raw);
+  const profile = extractProfile(userId, raw, account.senderProfileEmail);
   cache.set(key, { profile, expiresAt: now + ttl });
   return profile;
 }

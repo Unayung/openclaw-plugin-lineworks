@@ -25,6 +25,7 @@ function makeAccount(privateKeyPem: string): ResolvedLineWorksAccount {
     channels: {},
     extraScopes: [],
     senderProfileEnrichment: true,
+    senderProfileEmail: true,
     mailPreFetchEnabled: false,
     mailPreFetchCount: 10,
     publicBaseUrl: undefined,

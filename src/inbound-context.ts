@@ -25,8 +25,6 @@ export type LineWorksInboundMessage = {
    * the agent's prompt (openclaw core drops custom ctx fields). */
   senderEmail?: string;
   senderFullName?: string;
-  senderDepartment?: string;
-  senderTitle?: string;
 };
 
 export function buildLineWorksInboundContext<TContext>(params: {
